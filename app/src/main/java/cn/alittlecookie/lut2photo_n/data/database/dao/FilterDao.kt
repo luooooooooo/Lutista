@@ -1,0 +1,47 @@
+package cn.alittlecookie.lut2photo_n.data.database.dao
+
+import androidx.room.Dao
+import androidx.room.Delete
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+import androidx.room.Update
+import cn.alittlecookie.lut2photo_n.data.database.entity.FilterEntity
+import kotlinx.coroutines.flow.Flow
+
+@Dao
+interface FilterDao {
+
+    @Query("SELECT * FROM filters ORDER BY updatedAt DESC")
+    fun getAllFilters(): Flow<List<FilterEntity>>
+
+    @Query("SELECT * FROM filters WHERE id = :id")
+    suspend fun getFilterById(id: Long): FilterEntity?
+
+    @Query("SELECT * FROM filters WHERE name = :name LIMIT 1")
+    suspend fun getFilterByName(name: String): FilterEntity?
+
+    @Query("SELECT * FROM filters WHERE isDefault = 1 LIMIT 1")
+    suspend fun getDefaultFilter(): FilterEntity?
+
+    @Query("SELECT * FROM filters WHERE isDefault = 1 LIMIT 1")
+    fun getDefaultFilterFlow(): Flow<FilterEntity?>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(filter: FilterEntity): Long
+
+    @Update
+    suspend fun update(filter: FilterEntity)
+
+    @Delete
+    suspend fun delete(filter: FilterEntity)
+
+    @Query("DELETE FROM filters WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
+    @Query("UPDATE filters SET unifiedLutPath = :path, unifiedLutHash = :hash WHERE id = :id")
+    suspend fun updateUnifiedLut(id: Long, path: String?, hash: String?)
+
+    @Query("UPDATE filters SET updatedAt = :timestamp WHERE id = :id")
+    suspend fun updateTimestamp(id: Long, timestamp: Long = System.currentTimeMillis())
+}
