@@ -1,5 +1,8 @@
 package cn.alittlecookie.lut2photo_n.ui.screen
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +21,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -28,9 +32,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import cn.alittlecookie.lut2photo_n.data.repository.FilterRepository
+import org.koin.compose.koinInject
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.DropdownItem
@@ -48,11 +53,13 @@ import top.yukonga.miuix.kmp.utils.overScrollVertical
 
 
 @Composable
-@Preview
 fun HomeScreen(
     modifier: Modifier = Modifier,
-    scrollBehavior: ScrollBehavior? = null
+    scrollBehavior: ScrollBehavior? = null,
+    onPhotoSelected: (List<String>) -> Unit = {}
 ) {
+    val filterRepository: FilterRepository = koinInject()
+
     var isMonitorRunning by remember { mutableStateOf(false) }
     var isCameraMode by remember { mutableStateOf(false) }
     var processedCount by remember { mutableIntStateOf(0) }
@@ -60,12 +67,17 @@ fun HomeScreen(
     var selectedFilterIndex by remember { mutableIntStateOf(0) }
     var selectedWatermarkIndex by remember { mutableIntStateOf(0) }
 
-    val filterOptions = listOf(
-        DropdownItem(text = "无滤镜"),
-        DropdownItem(text = "默认滤镜"),
-        DropdownItem(text = "电影风格"),
-        DropdownItem(text = "日系清新")
-    )
+    val filtersFromDb by filterRepository.getAllFilters().collectAsState(initial = emptyList())
+
+    val filterOptions = remember(filtersFromDb) {
+        buildList {
+            add(DropdownItem(text = "无滤镜"))
+            addAll(filtersFromDb.map { filter ->
+                DropdownItem(text = filter.name)
+            })
+        }
+    }
+
     val watermarkOptions = listOf(
         DropdownItem(text = "无水印"),
         DropdownItem(text = "默认边框"),
@@ -94,7 +106,8 @@ fun HomeScreen(
                 isCameraMode = isCameraMode,
                 onMonitorToggle = { isMonitorRunning = !isMonitorRunning },
                 onCameraModeChange = { isCameraMode = it },
-                onCameraClick = { /* TODO: 打开联机页面 */ }
+                onCameraClick = { /* TODO: 打开联机页面 */ },
+                onPhotoSelected = onPhotoSelected
             )
         }
 
@@ -122,7 +135,8 @@ private fun StatusSection(
     isCameraMode: Boolean,
     onMonitorToggle: () -> Unit,
     onCameraModeChange: (Boolean) -> Unit,
-    onCameraClick: () -> Unit
+    onCameraClick: () -> Unit,
+    onPhotoSelected: (List<String>) -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -131,7 +145,6 @@ private fun StatusSection(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // 左侧：实时处理状态卡片
         Card(
             modifier = Modifier
                 .weight(1f)
@@ -196,14 +209,12 @@ private fun StatusSection(
             }
         }
 
-        // 右侧：两个小卡片
         Column(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight(),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // 联机模式卡片
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -237,13 +248,23 @@ private fun StatusSection(
                 }
             }
 
-            // 从相册选择卡片
+            val photoPickerLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.PickMultipleVisualMedia(50)
+            ) { uris ->
+                if (uris.isNotEmpty()) {
+                    onPhotoSelected(uris.map { it.toString() })
+                }
+            }
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f),
                 insideMargin = PaddingValues(16.dp),
-                onClick = { /* TODO: 打开相册 */ },
+                onClick = {
+                    photoPickerLauncher.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                    )
+                },
                 showIndication = true
             ) {
                 Column(
@@ -287,28 +308,24 @@ private fun MonitorSettingsCard(
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
-            // 仅处理新增文件
             SwitchPreference(
                 title = "仅处理新增文件",
                 summary = "开启后只处理监控文件夹中新增的图片",
                 checked = onlyNewFiles,
                 onCheckedChange = onOnlyNewFilesChange
             )
-            // 监控文件夹
             ArrowPreference(
                 title = "监控文件夹",
                 summary = "点击设置监控文件夹",
                 onClick = onMonitorFolderClick
             )
 
-            // 输出文件夹
             ArrowPreference(
                 title = "输出文件夹",
                 summary = "点击设置输出文件夹",
                 onClick = onOutputFolderClick
             )
 
-            // 滤镜选择
             OverlaySpinnerPreference(
                 title = "滤镜选择",
                 summary = "选择要应用的滤镜",
@@ -317,7 +334,6 @@ private fun MonitorSettingsCard(
                 onSelectedIndexChange = onFilterSelected
             )
 
-            // 边框水印选择
             OverlaySpinnerPreference(
                 title = "边框水印选择",
                 summary = "选择要应用的边框水印",

@@ -19,6 +19,7 @@ import cn.alittlecookie.lut2photo_n.domain.usecase.ApplyFilterUseCase
 import cn.alittlecookie.lut2photo_n.domain.usecase.ExportFilterUseCase
 import cn.alittlecookie.lut2photo_n.domain.usecase.ImportLutUseCase
 import cn.alittlecookie.lut2photo_n.domain.usecase.ProcessImageUseCase
+import cn.alittlecookie.lut2photo_n.manager.BuiltinFilterManager
 import cn.alittlecookie.lut2photo_n.manager.LogManager
 import cn.alittlecookie.lut2photo_n.manager.PermissionManager
 import cn.alittlecookie.lut2photo_n.manager.SettingsManager
@@ -43,7 +44,7 @@ val appModule = module {
             androidContext(),
             AppDatabase::class.java,
             "lut2photo.db"
-        ).build()
+        ).addMigrations(AppDatabase.MIGRATION_1_2).build()
     }
 
     // DAOs
@@ -59,6 +60,7 @@ val appModule = module {
     singleOf(::LogManager)
     singleOf(::PermissionManager)
     singleOf(::SettingsManager)
+    singleOf(::BuiltinFilterManager)
 
     // Utilities
     singleOf(::FileUtils)
@@ -86,7 +88,7 @@ val appModule = module {
     singleOf(::TaskSubmissionManager)
 
     // Watermark System
-    singleOf(::BitmapCache)
+    single { BitmapCache() }
     singleOf(::OutputRenderer)
     singleOf(::WatermarkProcessor)
     singleOf(::ResourceManager)

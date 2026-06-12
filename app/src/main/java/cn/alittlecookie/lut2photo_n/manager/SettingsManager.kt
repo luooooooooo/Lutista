@@ -87,6 +87,15 @@ class SettingsManager(
         dataStore.edit { prefs -> prefs[MONITOR_PATH_KEY] = path }
     }
 
+    // 内置滤镜版本号
+    val builtinFilterVersion: Flow<Int> = dataStore.data.map { prefs ->
+        prefs[BUILTIN_FILTER_VERSION_KEY] ?: 0
+    }
+
+    suspend fun setBuiltinFilterVersion(version: Int) {
+        dataStore.edit { prefs -> prefs[BUILTIN_FILTER_VERSION_KEY] = version }
+    }
+
     companion object {
         private val OUTPUT_FORMAT_KEY = stringPreferencesKey("output_format")
         private val JPG_QUALITY_KEY = intPreferencesKey("jpg_quality")
@@ -95,6 +104,7 @@ class SettingsManager(
         private val THEME_MODE_KEY = stringPreferencesKey("theme_mode")
         private val LOG_ENABLED_KEY = booleanPreferencesKey("log_enabled")
         private val MONITOR_PATH_KEY = stringPreferencesKey("monitor_path")
+        private val BUILTIN_FILTER_VERSION_KEY = intPreferencesKey("builtin_filter_version")
     }
 }
 

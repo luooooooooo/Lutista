@@ -44,4 +44,16 @@ interface FilterDao {
 
     @Query("UPDATE filters SET updatedAt = :timestamp WHERE id = :id")
     suspend fun updateTimestamp(id: Long, timestamp: Long = System.currentTimeMillis())
+
+    @Query("SELECT * FROM filters WHERE isBuiltIn = 1 ORDER BY name ASC")
+    fun getBuiltinFilters(): Flow<List<FilterEntity>>
+
+    @Query("SELECT * FROM filters WHERE isBuiltIn = 1 ORDER BY name ASC")
+    suspend fun getBuiltinFiltersList(): List<FilterEntity>
+
+    @Query("DELETE FROM filters WHERE isBuiltIn = 1")
+    suspend fun deleteAllBuiltinFilters()
+
+    @Query("SELECT COUNT(*) FROM filters WHERE isBuiltIn = 1")
+    suspend fun getBuiltinFilterCount(): Int
 }

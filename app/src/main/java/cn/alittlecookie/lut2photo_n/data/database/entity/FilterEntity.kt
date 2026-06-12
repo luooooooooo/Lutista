@@ -35,6 +35,10 @@ data class FilterEntity(
     val unifiedLutPath: String? = null,
     val unifiedLutHash: String? = null,
     val isDefault: Boolean = false,
+    // 内置滤镜标识
+    val isBuiltIn: Boolean = false,
+    // 滤镜文件夹路径 (应用私有目录/filters/滤镜名称/)
+    val filterDirPath: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 )
