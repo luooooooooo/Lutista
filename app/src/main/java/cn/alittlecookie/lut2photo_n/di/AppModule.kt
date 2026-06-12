@@ -27,6 +27,11 @@ import cn.alittlecookie.lut2photo_n.service.TaskSubmissionManager
 import cn.alittlecookie.lut2photo_n.util.FileUtils
 import cn.alittlecookie.lut2photo_n.util.ImageUtils
 import cn.alittlecookie.lut2photo_n.util.LutParser
+import cn.alittlecookie.lut2photo_n.watermark.cache.BitmapCache
+import cn.alittlecookie.lut2photo_n.watermark.manager.HistoryManager
+import cn.alittlecookie.lut2photo_n.watermark.manager.ResourceManager
+import cn.alittlecookie.lut2photo_n.watermark.renderer.OutputRenderer
+import cn.alittlecookie.lut2photo_n.watermark.renderer.WatermarkProcessor
 import org.koin.android.ext.koin.androidContext
 import org.koin.core.module.dsl.singleOf
 import org.koin.dsl.module
@@ -79,4 +84,11 @@ val appModule = module {
     // Services
     singleOf(::ImageProcessingService)
     singleOf(::TaskSubmissionManager)
+
+    // Watermark System
+    singleOf(::BitmapCache)
+    singleOf(::OutputRenderer)
+    singleOf(::WatermarkProcessor)
+    singleOf(::ResourceManager)
+    singleOf(::HistoryManager)
 }

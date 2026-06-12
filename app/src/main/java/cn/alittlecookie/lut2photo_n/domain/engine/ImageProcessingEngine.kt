@@ -1,10 +1,15 @@
 package cn.alittlecookie.lut2photo_n.domain.engine
 
+import android.graphics.Bitmap
 import cn.alittlecookie.lut2photo_n.data.model.FilterConfig
 import cn.alittlecookie.lut2photo_n.data.model.UnifiedLut
 import cn.alittlecookie.lut2photo_n.manager.LogManager
 import cn.alittlecookie.lut2photo_n.util.LutParser
+import cn.alittlecookie.lut2photo_n.watermark.model.Scene
+import cn.alittlecookie.lut2photo_n.watermark.renderer.WatermarkProcessor
+import org.opencv.android.Utils
 import org.opencv.core.Mat
+import org.opencv.imgproc.Imgproc
 
 class ImageProcessingEngine(
     private val logger: LogManager,
@@ -15,7 +20,8 @@ class ImageProcessingEngine(
     private val curveProcessor: CurveProcessor,
     private val lchProcessor: LchProcessor,
     private val vignetteProcessor: VignetteProcessor,
-    private val grainProcessor: GrainProcessor
+    private val grainProcessor: GrainProcessor,
+    private val watermarkProcessor: WatermarkProcessor
 ) {
     companion object {
         private const val TAG = "ImageProcessingEngine"
@@ -43,6 +49,17 @@ class ImageProcessingEngine(
     fun processImageWithUnifiedLut(input: Mat, unifiedLut: UnifiedLut): Mat {
         logger.d(TAG, "Processing image with unified LUT")
         return lutProcessor.processWithUnifiedLut(input, unifiedLut)
+    }
+
+    fun applyWatermark(input: Mat, scene: Scene?): Mat {
+        if (scene == null) return input
+        logger.d(TAG, "Applying watermark")
+
+        val bitmap = matToBitmap(input)
+        val result = watermarkProcessor.applyWatermark(bitmap, scene)
+        bitmap.recycle()
+
+        return bitmapToMat(result)
     }
 
     suspend fun computeUnifiedLut(filter: FilterConfig): UnifiedLut {
@@ -91,5 +108,21 @@ class ImageProcessingEngine(
         sb.append(filter.colorTemperature)
         sb.append(filter.tint)
         return sb.toString().hashCode().toString()
+    }
+
+    private fun matToBitmap(mat: Mat): Bitmap {
+        val bitmap = Bitmap.createBitmap(mat.cols(), mat.rows(), Bitmap.Config.ARGB_8888)
+        val rgba = Mat()
+        Imgproc.cvtColor(mat, rgba, Imgproc.COLOR_BGR2RGBA)
+        Utils.matToBitmap(rgba, bitmap)
+        rgba.release()
+        return bitmap
+    }
+
+    private fun bitmapToMat(bitmap: Bitmap): Mat {
+        val mat = Mat()
+        Utils.bitmapToMat(bitmap, mat)
+        Imgproc.cvtColor(mat, mat, Imgproc.COLOR_RGBA2BGR)
+        return mat
     }
 }

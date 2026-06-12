@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import cn.alittlecookie.lut2photo_n.ui.screen.MainScreen
 import cn.alittlecookie.lut2photo_n.ui.theme.Lut2PhotoTheme
 
 class MainActivity : ComponentActivity() {
@@ -13,7 +14,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             Lut2PhotoTheme {
-                // TODO: UI 入口，待 UI 设计完成后接入
+                MainScreen()
             }
         }
     }
