@@ -221,8 +221,8 @@ private fun StatusSection(
                         Text(
                             text = "联机模式",
                             fontWeight = FontWeight.Medium,
-                            fontSize = 15.sp,
-                            color = colorScheme.onSurfaceVariantSummary
+                            fontSize = 16.sp,
+                            color = colorScheme.onSurface
                         )
                         Text(
                             text = if (isCameraMode) "已开启" else "已关闭",
@@ -255,8 +255,8 @@ private fun StatusSection(
                         modifier = Modifier.fillMaxWidth(),
                         text = "从相册选择",
                         fontWeight = FontWeight.Medium,
-                        fontSize = 15.sp,
-                        color = colorScheme.onSurfaceVariantSummary
+                        fontSize = 16.sp,
+                        color = colorScheme.onSurface
                     )
                     Text(
                         modifier = Modifier.fillMaxWidth(),
