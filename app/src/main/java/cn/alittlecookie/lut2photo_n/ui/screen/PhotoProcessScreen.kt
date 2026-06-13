@@ -3,6 +3,7 @@ package cn.alittlecookie.lut2photo_n.ui.screen
 import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -10,7 +11,9 @@ import android.provider.MediaStore
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,6 +33,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -49,6 +53,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import cn.alittlecookie.lut2photo_n.data.database.entity.FilterEntity
 import cn.alittlecookie.lut2photo_n.data.model.FilterConfig
 import cn.alittlecookie.lut2photo_n.data.repository.FilterRepository
 import cn.alittlecookie.lut2photo_n.domain.engine.ImageProcessingEngine
@@ -62,7 +67,6 @@ import kotlinx.coroutines.withContext
 import org.koin.compose.koinInject
 import org.opencv.android.Utils
 import org.opencv.core.Mat
-import org.opencv.imgcodecs.Imgcodecs
 import org.opencv.imgproc.Imgproc
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
@@ -86,8 +90,6 @@ import top.yukonga.miuix.kmp.icon.extended.Refresh
 import top.yukonga.miuix.kmp.icon.extended.Settings
 import top.yukonga.miuix.kmp.menu.OverlayIconCascadingDropdownMenu
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import java.io.File
-import java.io.FileOutputStream
 
 data class PhotoItem(
     val uri: String,
@@ -245,16 +247,6 @@ fun PhotoProcessScreen(
         )
     }
 
-    suspend fun copyUriToTempFile(context: Context, uri: String): File = withContext(Dispatchers.IO) {
-        val tempFile = File(context.cacheDir, "input_${System.currentTimeMillis()}.jpg")
-        context.contentResolver.openInputStream(Uri.parse(uri))?.use { input ->
-            FileOutputStream(tempFile).use { output ->
-                input.copyTo(output)
-            }
-        }
-        tempFile
-    }
-
     fun saveBitmapToGallery(context: Context, bitmap: Bitmap, displayName: String): Uri? {
         val contentValues = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, displayName)
@@ -304,17 +296,20 @@ fun PhotoProcessScreen(
 
                     val resultBitmap = withContext(Dispatchers.IO) {
                         ensureActive()
-                        val tempFile = copyUriToTempFile(context, photo.uri)
+
+                        val inputBitmap = context.contentResolver.openInputStream(Uri.parse(photo.uri))?.use { stream ->
+                            BitmapFactory.decodeStream(stream)
+                        }
+                        if (inputBitmap == null) {
+                            logger.e("PhotoProcessScreen", "无法读取图片: ${photo.uri}")
+                            return@withContext null
+                        }
 
                         try {
                             ensureActive()
-                            val inputMat = Imgcodecs.imread(tempFile.absolutePath, Imgcodecs.IMREAD_COLOR)
-                            tempFile.delete()
-
-                            if (inputMat.empty()) {
-                                logger.e("PhotoProcessScreen", "无法读取图片: ${photo.uri}")
-                                return@withContext null
-                            }
+                            val inputMat = Mat()
+                            Utils.bitmapToMat(inputBitmap, inputMat)
+                            Imgproc.cvtColor(inputMat, inputMat, Imgproc.COLOR_RGBA2BGR)
 
                             ensureActive()
                             val filterConfig = buildFilterConfig(effectiveSettings.filterId)
@@ -328,18 +323,17 @@ fun PhotoProcessScreen(
                             ensureActive()
                             val rgbaMat = Mat()
                             Imgproc.cvtColor(outputMat, rgbaMat, Imgproc.COLOR_BGR2RGBA)
-                            val resultBitmap = Bitmap.createBitmap(
+                            val result = Bitmap.createBitmap(
                                 rgbaMat.cols(),
                                 rgbaMat.rows(),
                                 Bitmap.Config.ARGB_8888
                             )
-                            Utils.matToBitmap(rgbaMat, resultBitmap)
+                            Utils.matToBitmap(rgbaMat, result)
                             rgbaMat.release()
                             outputMat.release()
 
-                            resultBitmap
+                            result
                         } catch (e: Exception) {
-                            tempFile.delete()
                             throw e
                         }
                     }
@@ -440,6 +434,8 @@ fun PhotoProcessScreen(
                 photoUri = photos[selectedPhotoIndex].uri,
                 currentSettings = getCurrentSettings(),
                 filterOptions = filterOptions,
+                engine = engine,
+                filtersFromDb = filtersFromDb,
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
@@ -580,9 +576,72 @@ private fun MainPreviewArea(
     photoUri: String,
     currentSettings: PhotoEffectSettings,
     filterOptions: List<FilterOption>,
+    engine: ImageProcessingEngine,
+    filtersFromDb: List<FilterEntity>,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     var isLongPressed by remember { mutableStateOf(false) }
+    var previewBitmap by remember { mutableStateOf<Bitmap?>(null) }
+
+    fun buildConfigForPreview(filterId: Long): FilterConfig? {
+        if (filterId == 0L) return null
+        val entity = filtersFromDb.find { it.id == filterId } ?: return null
+        return FilterConfig(
+            id = entity.id,
+            name = entity.name,
+            lutPath1 = entity.lutPath1,
+            lutConcentration1 = entity.lutConcentration1,
+            lutPath2 = entity.lutPath2,
+            lutConcentration2 = entity.lutConcentration2,
+            lutPrecision = entity.lutPrecision,
+            exposure = entity.exposure,
+            contrast = entity.contrast,
+            highlights = entity.highlights,
+            shadows = entity.shadows,
+            saturation = entity.saturation,
+            colorTemperature = entity.colorTemperature,
+            tint = entity.tint,
+            vignetteStrength = entity.vignetteStrength
+        )
+    }
+
+    LaunchedEffect(photoUri, currentSettings.filterId, filtersFromDb) {
+        val filterConfig = buildConfigForPreview(currentSettings.filterId)
+        if (filterConfig == null) {
+            previewBitmap = null
+            return@LaunchedEffect
+        }
+        withContext(Dispatchers.IO) {
+            try {
+                val inputBitmap = context.contentResolver.openInputStream(Uri.parse(photoUri))?.use { stream ->
+                    val options = BitmapFactory.Options().apply {
+                        inSampleSize = 2
+                    }
+                    BitmapFactory.decodeStream(stream, null, options)
+                } ?: return@withContext
+
+                val mat = Mat()
+                Utils.bitmapToMat(inputBitmap, mat)
+                Imgproc.cvtColor(mat, mat, Imgproc.COLOR_RGBA2BGR)
+
+                val outputMat = engine.processImagePreview(mat, filterConfig)
+                mat.release()
+
+                val rgbaMat = Mat()
+                Imgproc.cvtColor(outputMat, rgbaMat, Imgproc.COLOR_BGR2RGBA)
+                val result = Bitmap.createBitmap(rgbaMat.cols(), rgbaMat.rows(), Bitmap.Config.ARGB_8888)
+                Utils.matToBitmap(rgbaMat, result)
+                rgbaMat.release()
+                outputMat.release()
+                inputBitmap.recycle()
+
+                previewBitmap = result
+            } catch (_: Exception) {
+                previewBitmap = null
+            }
+        }
+    }
 
     Card(
         modifier = modifier
@@ -594,19 +653,41 @@ private fun MainPreviewArea(
                 .fillMaxSize()
                 .aspectRatio(4f / 5f)
                 .pointerInput(Unit) {
-                    detectTapGestures(
-                        onLongPress = {
-                            isLongPressed = true
+                    awaitEachGesture {
+                        awaitFirstDown(requireUnconsumed = false)
+                        val longPressResult = withTimeoutOrNull(400L) {
+                            waitForUpOrCancellation()
                         }
-                    )
+                        if (longPressResult == null) {
+                            isLongPressed = true
+                            waitForUpOrCancellation()
+                            isLongPressed = false
+                        }
+                    }
                 }
         ) {
-            AsyncImage(
-                model = photoUri,
-                contentDescription = "Preview",
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxSize()
-            )
+            if (isLongPressed) {
+                AsyncImage(
+                    model = photoUri,
+                    contentDescription = "Original",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else if (previewBitmap != null) {
+                AsyncImage(
+                    model = previewBitmap,
+                    contentDescription = "Preview with filter",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                AsyncImage(
+                    model = photoUri,
+                    contentDescription = "Preview",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
 
             val filterName = filterOptions.find { it.id == currentSettings.filterId }?.name ?: "默认"
             Box(

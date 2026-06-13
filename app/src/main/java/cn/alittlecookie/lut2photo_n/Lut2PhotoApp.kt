@@ -11,6 +11,7 @@ import org.koin.android.ext.koin.androidContext
 import org.koin.android.ext.koin.androidLogger
 import org.koin.core.context.startKoin
 import org.koin.java.KoinJavaComponent.get
+import org.opencv.android.OpenCVLoader
 import timber.log.Timber
 
 class Lut2PhotoApp : Application() {
@@ -31,6 +32,10 @@ class Lut2PhotoApp : Application() {
         }
 
         instance = this
+
+        if (!OpenCVLoader.initLocal()) {
+            Timber.e("OpenCV initialization failed")
+        }
 
         initializeBuiltinFilters()
     }
