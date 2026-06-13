@@ -85,9 +85,9 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.rememberTopAppBarState
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
+import top.yukonga.miuix.kmp.icon.extended.Background
 import top.yukonga.miuix.kmp.icon.extended.Create
 import top.yukonga.miuix.kmp.icon.extended.Ok
-import top.yukonga.miuix.kmp.icon.extended.Refresh
 import top.yukonga.miuix.kmp.icon.extended.Settings
 import top.yukonga.miuix.kmp.menu.OverlayIconCascadingDropdownMenu
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -130,6 +130,7 @@ fun PhotoProcessScreen(
     var processingProgress by remember { mutableStateOf(0f) }
     var processingStatusText by remember { mutableStateOf("准备中...") }
     var isCancelled by remember { mutableStateOf(false) }
+    var wasCancelled by remember { mutableStateOf(false) }
     var showResultScreen by remember { mutableStateOf(false) }
     var resultPhotoCount by remember { mutableIntStateOf(0) }
 
@@ -292,6 +293,7 @@ fun PhotoProcessScreen(
     fun startProcessing() {
         showProcessingDialog = true
         isCancelled = false
+        wasCancelled = false
         processingProgress = 0f
         processingStatusText = "准备处理..."
 
@@ -309,7 +311,7 @@ fun PhotoProcessScreen(
                 )
 
                 try {
-                    processingStatusText = "处理第 ${photoIdx + 1}/$totalPhotos 张..."
+                    processingStatusText = "正在处理..."
                     processingProgress = photoIdx.toFloat() / totalPhotos
 
                     val resultBitmap = withContext(Dispatchers.IO) {
@@ -364,6 +366,7 @@ fun PhotoProcessScreen(
                             resultBitmap.recycle()
                         }
                         processedCount++
+                        resultPhotoCount = processedCount
                     }
                 } catch (e: Exception) {
                     if (e is kotlinx.coroutines.CancellationException) throw e
@@ -372,8 +375,16 @@ fun PhotoProcessScreen(
             }
 
             showProcessingDialog = false
-            resultPhotoCount = processedCount
-            showResultScreen = true
+            if (isCancelled) {
+                android.widget.Toast.makeText(
+                    context,
+                    "处理中断，已处理 $processedCount 张图片",
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
+            } else {
+                resultPhotoCount = processedCount
+                showResultScreen = true
+            }
         }
     }
 
@@ -471,10 +482,13 @@ fun PhotoProcessScreen(
 
     if (showProcessingDialog) {
         ProcessingDialog(
-            progress = processingProgress,
+            processedCount = resultPhotoCount,
+            totalPhotos = photos.size,
             statusText = processingStatusText,
             onCancel = {
                 isCancelled = true
+                wasCancelled = true
+                resultPhotoCount = 0
                 showProcessingDialog = false
             }
         )
@@ -932,19 +946,19 @@ private fun BottomActionBar(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    imageVector = MiuixIcons.Refresh,
+                    imageVector = MiuixIcons.Demibold.Background,
                     contentDescription = null,
                     tint = Color.White,
                     modifier = Modifier.size(20.dp)
                 )
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(24.dp))
                 Text(
                     text = "开始处理",
                     fontSize = 17.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = Color.White
                 )
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(16.dp))
                 Box(
                     modifier = Modifier
                         .background(
@@ -966,7 +980,8 @@ private fun BottomActionBar(
 
 @Composable
 private fun ProcessingDialog(
-    progress: Float,
+    processedCount: Int,
+    totalPhotos: Int,
     statusText: String,
     onCancel: () -> Unit
 ) {
@@ -999,14 +1014,14 @@ private fun ProcessingDialog(
                 }
 
                 Text(
-                    text = statusText,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
+                    text = "$processedCount / $totalPhotos",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
                     color = MiuixTheme.colorScheme.onSurface
                 )
 
                 Text(
-                    text = "${(progress * 100).toInt()}%",
+                    text = statusText,
                     fontSize = 14.sp,
                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary
                 )
@@ -1015,12 +1030,12 @@ private fun ProcessingDialog(
                     onClick = onCancel,
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(
-                        color = MiuixTheme.colorScheme.surfaceVariant
+                        color = MiuixTheme.colorScheme.secondaryContainer
                     )
                 ) {
                     Text(
                         text = "取消处理",
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary
+                        color = MiuixTheme.colorScheme.error
                     )
                 }
             }
@@ -1116,13 +1131,13 @@ private fun ResultScreen(
                 .fillMaxWidth()
                 .height(48.dp),
             colors = ButtonDefaults.buttonColors(
-                color = MiuixTheme.colorScheme.surfaceVariant
+                color = MiuixTheme.colorScheme.secondary
             )
         ) {
             Text(
                 text = "返回主页",
                 fontSize = 17.sp,
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary
+                color = MiuixTheme.colorScheme.primary
             )
         }
     }
