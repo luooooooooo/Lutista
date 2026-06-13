@@ -19,6 +19,7 @@ import cn.alittlecookie.lut2photo_n.domain.usecase.ApplyFilterUseCase
 import cn.alittlecookie.lut2photo_n.domain.usecase.ExportFilterUseCase
 import cn.alittlecookie.lut2photo_n.domain.usecase.ImportLutUseCase
 import cn.alittlecookie.lut2photo_n.domain.usecase.ProcessImageUseCase
+import cn.alittlecookie.lut2photo_n.gpu.VulkanGpuEngine
 import cn.alittlecookie.lut2photo_n.manager.BuiltinFilterManager
 import cn.alittlecookie.lut2photo_n.manager.LogManager
 import cn.alittlecookie.lut2photo_n.manager.PermissionManager
@@ -75,6 +76,7 @@ val appModule = module {
     singleOf(::LchProcessor)
     singleOf(::VignetteProcessor)
     singleOf(::GrainProcessor)
+    singleOf(::VulkanGpuEngine)
     singleOf(::ImageProcessingEngine)
 
     // Use Cases

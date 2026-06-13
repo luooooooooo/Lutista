@@ -26,7 +26,8 @@ enum class MainPage(val label: String, val icon: androidx.compose.ui.graphics.ve
 
 @Composable
 fun MainTabScreen(
-    onPhotoSelected: (List<String>) -> Unit
+    onPhotoSelected: (List<String>) -> Unit,
+    launchPicker: () -> Unit = {}
 ) {
     var selectedPage by rememberSaveable { mutableIntStateOf(0) }
     val pages = MainPage.entries
@@ -66,7 +67,8 @@ fun MainTabScreen(
             0 -> HomeScreen(
                 modifier = Modifier.padding(top = paddingValues.calculateTopPadding()),
                 scrollBehavior = scrollBehavior,
-                onPhotoSelected = onPhotoSelected
+                onPhotoSelected = onPhotoSelected,
+                launchPicker = launchPicker
             )
             1 -> RecipeRoomScreen(
                 modifier = Modifier.padding(top = paddingValues.calculateTopPadding()),

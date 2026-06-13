@@ -96,6 +96,24 @@ class SettingsManager(
         dataStore.edit { prefs -> prefs[BUILTIN_FILTER_VERSION_KEY] = version }
     }
 
+    // 全局滤镜 ID
+    val globalFilterId: Flow<Long> = dataStore.data.map { prefs ->
+        prefs[GLOBAL_FILTER_ID_KEY]?.toLongOrNull() ?: 0L
+    }
+
+    suspend fun setGlobalFilterId(id: Long) {
+        dataStore.edit { prefs -> prefs[GLOBAL_FILTER_ID_KEY] = id.toString() }
+    }
+
+    // 全局边框水印 ID
+    val globalWatermarkId: Flow<String> = dataStore.data.map { prefs ->
+        prefs[GLOBAL_WATERMARK_ID_KEY] ?: "none"
+    }
+
+    suspend fun setGlobalWatermarkId(id: String) {
+        dataStore.edit { prefs -> prefs[GLOBAL_WATERMARK_ID_KEY] = id }
+    }
+
     companion object {
         private val OUTPUT_FORMAT_KEY = stringPreferencesKey("output_format")
         private val JPG_QUALITY_KEY = intPreferencesKey("jpg_quality")
@@ -105,6 +123,8 @@ class SettingsManager(
         private val LOG_ENABLED_KEY = booleanPreferencesKey("log_enabled")
         private val MONITOR_PATH_KEY = stringPreferencesKey("monitor_path")
         private val BUILTIN_FILTER_VERSION_KEY = intPreferencesKey("builtin_filter_version")
+        private val GLOBAL_FILTER_ID_KEY = stringPreferencesKey("global_filter_id")
+        private val GLOBAL_WATERMARK_ID_KEY = stringPreferencesKey("global_watermark_id")
     }
 }
 

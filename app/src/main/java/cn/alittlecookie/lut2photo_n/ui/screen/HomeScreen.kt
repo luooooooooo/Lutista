@@ -1,8 +1,5 @@
 package cn.alittlecookie.lut2photo_n.ui.screen
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -56,7 +53,8 @@ import top.yukonga.miuix.kmp.utils.overScrollVertical
 fun HomeScreen(
     modifier: Modifier = Modifier,
     scrollBehavior: ScrollBehavior? = null,
-    onPhotoSelected: (List<String>) -> Unit = {}
+    onPhotoSelected: (List<String>) -> Unit = {},
+    launchPicker: () -> Unit = {}
 ) {
     val filterRepository: FilterRepository = koinInject()
 
@@ -107,7 +105,8 @@ fun HomeScreen(
                 onMonitorToggle = { isMonitorRunning = !isMonitorRunning },
                 onCameraModeChange = { isCameraMode = it },
                 onCameraClick = { /* TODO: 打开联机页面 */ },
-                onPhotoSelected = onPhotoSelected
+                onPhotoSelected = onPhotoSelected,
+                launchPicker = launchPicker
             )
         }
 
@@ -136,7 +135,8 @@ private fun StatusSection(
     onMonitorToggle: () -> Unit,
     onCameraModeChange: (Boolean) -> Unit,
     onCameraClick: () -> Unit,
-    onPhotoSelected: (List<String>) -> Unit
+    onPhotoSelected: (List<String>) -> Unit,
+    launchPicker: () -> Unit = {}
 ) {
     Row(
         modifier = Modifier
@@ -248,23 +248,12 @@ private fun StatusSection(
                 }
             }
 
-            val photoPickerLauncher = rememberLauncherForActivityResult(
-                contract = ActivityResultContracts.PickMultipleVisualMedia(50)
-            ) { uris ->
-                if (uris.isNotEmpty()) {
-                    onPhotoSelected(uris.map { it.toString() })
-                }
-            }
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f),
                 insideMargin = PaddingValues(16.dp),
-                onClick = {
-                    photoPickerLauncher.launch(
-                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                    )
-                },
+                onClick = launchPicker,
                 showIndication = true
             ) {
                 Column(

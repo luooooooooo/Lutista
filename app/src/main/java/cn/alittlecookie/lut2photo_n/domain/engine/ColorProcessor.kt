@@ -2,7 +2,7 @@ package cn.alittlecookie.lut2photo_n.domain.engine
 
 import cn.alittlecookie.lut2photo_n.data.model.FilterConfig
 import cn.alittlecookie.lut2photo_n.manager.LogManager
-import org.opencv.core.CvType
+import cn.alittlecookie.lut2photo_n.util.processImageInChunks
 import org.opencv.core.Mat
 
 class ColorProcessor(
@@ -63,63 +63,36 @@ class ColorProcessor(
     }
 
     private fun applySaturation(input: Mat, saturation: Float): Mat {
-        val output = Mat()
-        input.convertTo(input, CvType.CV_32FC3)
-
-        val data = FloatArray(input.rows() * input.cols() * input.channels())
-        input.get(0, 0, data)
-
         val factor = 1f + saturation / 100f
-
-        for (i in data.indices step 3) {
-            val gray = data[i] * 0.299f + data[i + 1] * 0.587f + data[i + 2] * 0.114f
-            data[i] = (gray + (data[i] - gray) * factor).coerceIn(0f, 255f)
-            data[i + 1] = (gray + (data[i + 1] - gray) * factor).coerceIn(0f, 255f)
-            data[i + 2] = (gray + (data[i + 2] - gray) * factor).coerceIn(0f, 255f)
+        return processImageInChunks(input) { data ->
+            for (i in data.indices step 3) {
+                val gray = data[i] * 0.299f + data[i + 1] * 0.587f + data[i + 2] * 0.114f
+                data[i] = (gray + (data[i] - gray) * factor).coerceIn(0f, 255f)
+                data[i + 1] = (gray + (data[i + 1] - gray) * factor).coerceIn(0f, 255f)
+                data[i + 2] = (gray + (data[i + 2] - gray) * factor).coerceIn(0f, 255f)
+            }
+            data
         }
-
-        val result = Mat(input.rows(), input.cols(), CvType.CV_32FC3)
-        result.put(0, 0, data)
-        result.convertTo(result, CvType.CV_8UC3)
-
-        return result
     }
 
     private fun applyColorTemperature(input: Mat, temperature: Float): Mat {
-        val output = Mat()
         val adjustment = temperature / 200f * 255f
-
-        val data = FloatArray(input.rows() * input.cols() * input.channels())
-        input.convertTo(input, CvType.CV_32FC3)
-        input.get(0, 0, data)
-
-        for (i in data.indices step 3) {
-            data[i] = (data[i] + adjustment).coerceIn(0f, 255f)
-            data[i + 2] = (data[i + 2] - adjustment).coerceIn(0f, 255f)
+        return processImageInChunks(input) { data ->
+            for (i in data.indices step 3) {
+                data[i] = (data[i] + adjustment).coerceIn(0f, 255f)
+                data[i + 2] = (data[i + 2] - adjustment).coerceIn(0f, 255f)
+            }
+            data
         }
-
-        val result = Mat(input.rows(), input.cols(), CvType.CV_32FC3)
-        result.put(0, 0, data)
-        result.convertTo(result, CvType.CV_8UC3)
-
-        return result
     }
 
     private fun applyTint(input: Mat, tint: Float): Mat {
         val adjustment = tint / 200f * 255f
-
-        val data = FloatArray(input.rows() * input.cols() * input.channels())
-        input.convertTo(input, CvType.CV_32FC3)
-        input.get(0, 0, data)
-
-        for (i in data.indices step 3) {
-            data[i + 1] = (data[i + 1] + adjustment).coerceIn(0f, 255f)
+        return processImageInChunks(input) { data ->
+            for (i in data.indices step 3) {
+                data[i + 1] = (data[i + 1] + adjustment).coerceIn(0f, 255f)
+            }
+            data
         }
-
-        val result = Mat(input.rows(), input.cols(), CvType.CV_32FC3)
-        result.put(0, 0, data)
-        result.convertTo(result, CvType.CV_8UC3)
-
-        return result
     }
 }

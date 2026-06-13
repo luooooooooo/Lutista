@@ -2,7 +2,7 @@ package cn.alittlecookie.lut2photo_n.domain.engine
 
 import cn.alittlecookie.lut2photo_n.data.model.FilterConfig
 import cn.alittlecookie.lut2photo_n.manager.LogManager
-import org.opencv.core.CvType
+import cn.alittlecookie.lut2photo_n.util.processImageInChunks
 import org.opencv.core.Mat
 
 class BrightnessProcessor(
@@ -63,29 +63,20 @@ class BrightnessProcessor(
     }
 
     private fun applyHighlightsShadows(input: Mat, highlights: Float, shadows: Float): Mat {
-        val output = input.clone()
-        val data = FloatArray(input.rows() * input.cols() * input.channels())
-        input.convertTo(input, CvType.CV_32FC3)
-        input.get(0, 0, data)
-
-        for (i in data.indices step 3) {
-            val luminance = (data[i] * 0.299f + data[i + 1] * 0.587f + data[i + 2] * 0.114f) / 255f
-
-            for (ch in 0..2) {
-                var value = data[i + ch]
-                if (luminance > 0.5f && highlights != 0f) {
-                    value += highlights * luminance * 0.5f
-                } else if (luminance <= 0.5f && shadows != 0f) {
-                    value += shadows * (1f - luminance) * 0.5f
+        return processImageInChunks(input) { data ->
+            for (i in data.indices step 3) {
+                val luminance = (data[i] * 0.299f + data[i + 1] * 0.587f + data[i + 2] * 0.114f) / 255f
+                for (ch in 0..2) {
+                    var value = data[i + ch]
+                    if (luminance > 0.5f && highlights != 0f) {
+                        value += highlights * luminance * 0.5f
+                    } else if (luminance <= 0.5f && shadows != 0f) {
+                        value += shadows * (1f - luminance) * 0.5f
+                    }
+                    data[i + ch] = value.coerceIn(0f, 255f)
                 }
-                data[i + ch] = value.coerceIn(0f, 255f)
             }
+            data
         }
-
-        val result = Mat(input.rows(), input.cols(), CvType.CV_32FC3)
-        result.put(0, 0, data)
-        result.convertTo(result, CvType.CV_8UC3)
-
-        return result
     }
 }

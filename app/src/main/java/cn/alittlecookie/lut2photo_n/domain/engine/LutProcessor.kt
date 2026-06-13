@@ -14,6 +14,7 @@ class LutProcessor(
 ) {
     companion object {
         private const val TAG = "LutProcessor"
+        private const val MAX_FLOAT_ARRAY_SIZE = 16 * 1024 * 1024 // 16MB max float array
     }
 
     private val lutCache = mutableMapOf<String, LutData>()
@@ -104,32 +105,47 @@ class LutProcessor(
     }
 
     private fun applyLut(input: Mat, lut: LutData): Mat {
-        val output = Mat(input.rows(), input.cols(), input.type())
-        val size = lut.size
+        val output = Mat(input.rows(), input.cols(), CvType.CV_8UC3)
+        val width = input.cols()
+        val height = input.rows()
+        val channels = input.channels()
 
-        val inputData = FloatArray(input.rows() * input.cols() * input.channels())
-        input.convertTo(input, CvType.CV_32FC3, 1.0 / 255.0)
-        input.get(0, 0, inputData)
+        // Process in chunks to avoid OOM (each row = width * channels * 4 bytes float)
+        val chunkRows = (MAX_FLOAT_ARRAY_SIZE / (width * channels * 4)).coerceIn(1, height)
 
-        val outputData = FloatArray(inputData.size)
+        val inputFloat = Mat()
+        input.convertTo(inputFloat, CvType.CV_32FC3, 1.0 / 255.0)
 
-        for (i in inputData.indices step 3) {
-            val r = inputData[i].coerceIn(0f, 1f)
-            val g = inputData[i + 1].coerceIn(0f, 1f)
-            val b = inputData[i + 2].coerceIn(0f, 1f)
+        for (startRow in 0 until height step chunkRows) {
+            val endRow = minOf(startRow + chunkRows, height)
+            val rowCount = endRow - startRow
+            val rowData = FloatArray(rowCount * width * channels)
+            val outData = FloatArray(rowData.size)
 
-            val result = lutParser.trilinearInterpolation(lut, r, g, b)
+            inputFloat.rowRange(startRow, endRow).get(0, 0, rowData)
 
-            outputData[i] = result[0].coerceIn(0f, 1f)
-            outputData[i + 1] = result[1].coerceIn(0f, 1f)
-            outputData[i + 2] = result[2].coerceIn(0f, 1f)
+            for (i in rowData.indices step 3) {
+                val r = rowData[i].coerceIn(0f, 1f)
+                val g = rowData[i + 1].coerceIn(0f, 1f)
+                val b = rowData[i + 2].coerceIn(0f, 1f)
+                val result = lutParser.trilinearInterpolation(lut, r, g, b)
+                outData[i] = result[0].coerceIn(0f, 1f)
+                outData[i + 1] = result[1].coerceIn(0f, 1f)
+                outData[i + 2] = result[2].coerceIn(0f, 1f)
+            }
+
+            val chunkMat = Mat(rowCount, width, CvType.CV_32FC3)
+            chunkMat.put(0, 0, outData)
+            val chunkByte = Mat()
+            chunkMat.convertTo(chunkByte, CvType.CV_8UC3, 255.0)
+            chunkMat.release()
+
+            chunkByte.copyTo(output.rowRange(startRow, endRow))
+            chunkByte.release()
         }
 
-        val resultMat = Mat(input.rows(), input.cols(), CvType.CV_32FC3)
-        resultMat.put(0, 0, outputData)
-        resultMat.convertTo(resultMat, CvType.CV_8UC3, 255.0)
-
-        return resultMat
+        inputFloat.release()
+        return output
     }
 
     private fun mixImages(original: Mat, processed: Mat, concentration: Float): Mat {
@@ -148,4 +164,6 @@ class LutProcessor(
     fun clearCache() {
         lutCache.clear()
     }
+
+    fun loadLutForGpu(path: String): LutData? = loadLut(path)
 }

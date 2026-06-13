@@ -13,6 +13,8 @@ class LutParser(
     companion object {
         private const val TAG = "LutParser"
         private const val DEFAULT_LUT_SIZE = 33
+        private val DATA_LINE_REGEX = Regex("[\\d.\\-+eE]+\\s+[\\d.\\-+eE]+\\s+[\\d.\\-+eE]+")
+        private val WHITESPACE_REGEX = Regex("\\s+")
     }
 
     fun parseCube(file: File): LutData {
@@ -39,15 +41,15 @@ class LutParser(
                         size = trimmed.substringAfter("LUT_3D_SIZE").trim().toInt()
                     }
                     trimmed.startsWith("DOMAIN_MIN") -> {
-                        val parts = trimmed.substringAfter("DOMAIN_MIN").trim().split("\\s+".toRegex())
+                        val parts = trimmed.substringAfter("DOMAIN_MIN").trim().split(WHITESPACE_REGEX)
                         domainMin = parts.map { it.toFloat() }.toFloatArray()
                     }
                     trimmed.startsWith("DOMAIN_MAX") -> {
-                        val parts = trimmed.substringAfter("DOMAIN_MAX").trim().split("\\s+".toRegex())
+                        val parts = trimmed.substringAfter("DOMAIN_MAX").trim().split(WHITESPACE_REGEX)
                         domainMax = parts.map { it.toFloat() }.toFloatArray()
                     }
-                    trimmed.matches("[\\d.\\-+eE]+\\s+[\\d.\\-+eE]+\\s+[\\d.\\-+eE]+".toRegex()) -> {
-                        val parts = trimmed.split("\\s+".toRegex())
+                    trimmed.matches(DATA_LINE_REGEX) -> {
+                        val parts = trimmed.split(WHITESPACE_REGEX)
                         dataPoints.addAll(parts.map { it.toFloat() })
                     }
                 }
@@ -92,8 +94,8 @@ class LutParser(
                         size = trimmed.substringAfter(":").trim().substringAfter("3DLUT_Size").trim().toIntOrNull()
                             ?: trimmed.substringAfter("LUT_3D_SIZE").trim().toIntOrNull() ?: 0
                     }
-                    trimmed.matches("[\\d.\\-+eE]+\\s+[\\d.\\-+eE]+\\s+[\\d.\\-+eE]+".toRegex()) -> {
-                        val parts = trimmed.split("\\s+".toRegex())
+                    trimmed.matches(DATA_LINE_REGEX) -> {
+                        val parts = trimmed.split(WHITESPACE_REGEX)
                         dataPoints.addAll(parts.map { it.toFloat() })
                     }
                 }

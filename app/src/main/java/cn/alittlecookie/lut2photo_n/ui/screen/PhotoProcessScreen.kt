@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -20,7 +21,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -62,6 +62,7 @@ import cn.alittlecookie.lut2photo_n.manager.SettingsManager
 import coil.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.koin.compose.koinInject
@@ -106,8 +107,11 @@ data class PhotoEffectSettings(
 fun PhotoProcessScreen(
     photoUris: List<String>,
     onBackClick: () -> Unit,
-    onProcessComplete: (ProcessResult) -> Unit
+    onProcessComplete: (ProcessResult) -> Unit,
+    onContinueProcessing: () -> Unit = onBackClick
 ) {
+    BackHandler { onBackClick() }
+
     val context = LocalContext.current
     val filterRepository: FilterRepository = koinInject()
     val engine: ImageProcessingEngine = koinInject()
@@ -139,6 +143,18 @@ fun PhotoProcessScreen(
         }
     }
 
+    // Load saved global settings on entry
+    LaunchedEffect(Unit) {
+        globalFilterId = settingsManager.globalFilterId.first()
+        globalWatermarkId = settingsManager.globalWatermarkId.first()
+        for (i in perImageSettings.indices) {
+            perImageSettings[i] = PhotoEffectSettings(
+                filterId = globalFilterId,
+                watermarkId = globalWatermarkId
+            )
+        }
+    }
+
     fun getCurrentSettings(): PhotoEffectSettings {
         val settings = perImageSettings[selectedPhotoIndex]
         return if (settings.isCustomized) settings else PhotoEffectSettings(
@@ -160,7 +176,7 @@ fun PhotoProcessScreen(
 
     val filterOptions = remember(filtersFromDb) {
         buildList {
-            add(FilterOption(0, "默认", null))
+            add(FilterOption(0, "原图", null))
             addAll(filtersFromDb.map { filter ->
                 FilterOption(filter.id, filter.name, null)
             })
@@ -180,14 +196,15 @@ fun PhotoProcessScreen(
         DropdownEntry(
             items = listOf(
                 DropdownItem(
-                    text = "当前选择滤镜",
-                    summary = filterOptions.find { it.id == globalFilterId }?.name ?: "默认",
+                    text = "默认滤镜",
+                    summary = filterOptions.find { it.id == globalFilterId }?.name ?: "原图",
                     children = filterOptions.map { option ->
                         DropdownItem(
                             text = option.name,
                             selected = globalFilterId == option.id,
                             onClick = {
                                 globalFilterId = option.id
+                                scope.launch { settingsManager.setGlobalFilterId(option.id) }
                                 for (i in perImageSettings.indices) {
                                     if (!perImageSettings[i].isCustomized) {
                                         perImageSettings[i] = PhotoEffectSettings(
@@ -209,6 +226,7 @@ fun PhotoProcessScreen(
                             selected = globalWatermarkId == option.id,
                             onClick = {
                                 globalWatermarkId = option.id
+                                scope.launch { settingsManager.setGlobalWatermarkId(option.id) }
                                 for (i in perImageSettings.indices) {
                                     if (!perImageSettings[i].isCustomized) {
                                         perImageSettings[i] = PhotoEffectSettings(
@@ -364,10 +382,7 @@ fun PhotoProcessScreen(
             photoCount = resultPhotoCount,
             filterCount = perImageSettings.map { it.filterId }.distinct().size,
             watermarkCount = perImageSettings.map { it.watermarkId }.distinct().size,
-            onContinueProcessing = {
-                showResultScreen = false
-                onBackClick()
-            },
+            onContinueProcessing = onContinueProcessing,
             onBackToHome = onBackClick
         )
         return
@@ -453,12 +468,14 @@ fun PhotoProcessScreen(
                 EffectOptionsList(
                     options = filterOptions.map { EffectItem(it.id.toString(), it.name, it.thumbnail) },
                     selectedId = getCurrentSettings().filterId.toString(),
+                    globalId = globalFilterId.toString(),
                     onOptionSelected = { updateCurrentSettings(filterId = it.toLongOrNull() ?: 0L) }
                 )
             } else {
                 EffectOptionsList(
                     options = watermarkOptions.map { EffectItem(it.id, it.name, it.thumbnail) },
                     selectedId = getCurrentSettings().watermarkId,
+                    globalId = globalWatermarkId,
                     onOptionSelected = { updateCurrentSettings(watermarkId = it) }
                 )
             }
@@ -584,6 +601,14 @@ private fun MainPreviewArea(
     var isLongPressed by remember { mutableStateOf(false) }
     var previewBitmap by remember { mutableStateOf<Bitmap?>(null) }
 
+    // Cache: decoded RGBA8 bytes for current photo (survives filter changes)
+    var cachedRgbaBytes by remember { mutableStateOf<ByteArray?>(null) }
+    var cachedPhotoUri by remember { mutableStateOf("") }
+    var cachedWidth by remember { mutableIntStateOf(0) }
+    var cachedHeight by remember { mutableIntStateOf(0) }
+    // Generation counter: discard stale GPU results when rapidly switching filters
+    var filterGeneration by remember { mutableIntStateOf(0) }
+
     fun buildConfigForPreview(filterId: Long): FilterConfig? {
         if (filterId == 0L) return null
         val entity = filtersFromDb.find { it.id == filterId } ?: return null
@@ -606,39 +631,69 @@ private fun MainPreviewArea(
         )
     }
 
-    LaunchedEffect(photoUri, currentSettings.filterId, filtersFromDb) {
-        val filterConfig = buildConfigForPreview(currentSettings.filterId)
-        if (filterConfig == null) {
+    // Step 1: Decode image at preview resolution and cache RGBA bytes (only when photo changes)
+    LaunchedEffect(photoUri) {
+        withContext(Dispatchers.IO) {
+            try {
+                // First pass: get dimensions only
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                context.contentResolver.openInputStream(Uri.parse(photoUri))?.use {
+                    BitmapFactory.decodeStream(it, null, bounds)
+                }
+                val maxPreviewSize = 1024
+                val sampleSize = maxOf(
+                    bounds.outWidth / maxPreviewSize,
+                    bounds.outHeight / maxPreviewSize,
+                    1
+                ).coerceAtLeast(1)
+
+                // Second pass: decode at reduced size
+                val bmp = context.contentResolver.openInputStream(Uri.parse(photoUri))?.use { stream ->
+                    BitmapFactory.decodeStream(stream, null, BitmapFactory.Options().apply {
+                        inSampleSize = sampleSize
+                    })
+                }
+                if (bmp != null) {
+                    val w = bmp.width
+                    val h = bmp.height
+                    val bytes = ByteArray(w * h * 4)
+                    bmp.copyPixelsToBuffer(java.nio.ByteBuffer.wrap(bytes))
+                    cachedRgbaBytes = bytes
+                    cachedPhotoUri = photoUri
+                    cachedWidth = w
+                    cachedHeight = h
+                    bmp.recycle()
+                }
+            } catch (_: Exception) {
+                cachedRgbaBytes = null
+            }
+        }
+    }
+
+    // Step 2: Apply filter using cached bytes (only when filter changes)
+    LaunchedEffect(cachedPhotoUri, cachedRgbaBytes, currentSettings.filterId, filtersFromDb) {
+        val gen = ++filterGeneration
+        val bytes = cachedRgbaBytes
+        if (bytes == null || cachedWidth == 0) {
             previewBitmap = null
             return@LaunchedEffect
         }
+        val filterConfig = buildConfigForPreview(currentSettings.filterId)
+        val t0 = System.nanoTime()
         withContext(Dispatchers.IO) {
-            try {
-                val inputBitmap = context.contentResolver.openInputStream(Uri.parse(photoUri))?.use { stream ->
-                    val options = BitmapFactory.Options().apply {
-                        inSampleSize = 2
-                    }
-                    BitmapFactory.decodeStream(stream, null, options)
-                } ?: return@withContext
-
-                val mat = Mat()
-                Utils.bitmapToMat(inputBitmap, mat)
-                Imgproc.cvtColor(mat, mat, Imgproc.COLOR_RGBA2BGR)
-
-                val outputMat = engine.processImagePreview(mat, filterConfig)
-                mat.release()
-
-                val rgbaMat = Mat()
-                Imgproc.cvtColor(outputMat, rgbaMat, Imgproc.COLOR_BGR2RGBA)
-                val result = Bitmap.createBitmap(rgbaMat.cols(), rgbaMat.rows(), Bitmap.Config.ARGB_8888)
-                Utils.matToBitmap(rgbaMat, result)
-                rgbaMat.release()
-                outputMat.release()
-                inputBitmap.recycle()
-
+            val result = if (filterConfig != null) {
+                engine.processImageGpuFromBytes(bytes, cachedWidth, cachedHeight, filterConfig)
+            } else {
+                // Default filter: show original
+                val bmp = Bitmap.createBitmap(cachedWidth, cachedHeight, Bitmap.Config.ARGB_8888)
+                bmp.copyPixelsFromBuffer(java.nio.ByteBuffer.wrap(bytes))
+                bmp
+            }
+            val elapsed = (System.nanoTime() - t0) / 1_000_000
+            android.util.Log.d("PreviewTiming", "filterId=${currentSettings.filterId} gen=$gen elapsed=${elapsed}ms size=${cachedWidth}x${cachedHeight}")
+            // Only apply if this is still the latest filter change
+            if (gen == filterGeneration) {
                 previewBitmap = result
-            } catch (_: Exception) {
-                previewBitmap = null
             }
         }
     }
@@ -651,7 +706,6 @@ private fun MainPreviewArea(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .aspectRatio(4f / 5f)
                 .pointerInput(Unit) {
                     awaitEachGesture {
                         awaitFirstDown(requireUnconsumed = false)
@@ -740,21 +794,6 @@ private fun MainPreviewArea(
                 }
             }
 
-            if (isLongPressed) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.5f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "原图",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color.White
-                    )
-                }
-            }
         }
     }
 }
@@ -763,6 +802,7 @@ private fun MainPreviewArea(
 private fun EffectOptionsList(
     options: List<EffectItem>,
     selectedId: String,
+    globalId: String,
     onOptionSelected: (String) -> Unit
 ) {
     val listState = rememberLazyListState()
@@ -776,6 +816,7 @@ private fun EffectOptionsList(
             EffectOptionCard(
                 item = item,
                 isSelected = item.id == selectedId,
+                isGlobalDefault = item.id == globalId,
                 onClick = { onOptionSelected(item.id) }
             )
         }
@@ -786,6 +827,7 @@ private fun EffectOptionsList(
 private fun EffectOptionCard(
     item: EffectItem,
     isSelected: Boolean,
+    isGlobalDefault: Boolean,
     onClick: () -> Unit
 ) {
     Column(
@@ -832,7 +874,7 @@ private fun EffectOptionCard(
                 }
             }
 
-            if (item.id == "0") {
+            if (isGlobalDefault) {
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
@@ -950,10 +992,14 @@ private fun ProcessingDialog(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(56.dp),
-                    progress = progress
-                )
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(
+                        size = 56.dp
+                    )
+                }
 
                 Text(
                     text = statusText,

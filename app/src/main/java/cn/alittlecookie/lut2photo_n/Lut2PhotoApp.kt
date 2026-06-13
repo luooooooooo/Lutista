@@ -2,7 +2,10 @@ package cn.alittlecookie.lut2photo_n
 
 import android.app.Application
 import cn.alittlecookie.lut2photo_n.di.appModule
+import cn.alittlecookie.lut2photo_n.gpu.VulkanCapabilityChecker
+import cn.alittlecookie.lut2photo_n.gpu.VulkanGpuEngine
 import cn.alittlecookie.lut2photo_n.manager.BuiltinFilterManager
+import cn.alittlecookie.lut2photo_n.manager.LogManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -37,7 +40,25 @@ class Lut2PhotoApp : Application() {
             Timber.e("OpenCV initialization failed")
         }
 
+        initializeVulkan()
         initializeBuiltinFilters()
+    }
+
+    private fun initializeVulkan() {
+        applicationScope.launch(Dispatchers.IO) {
+            try {
+                val logger = get<LogManager>(LogManager::class.java)
+                val vulkanEngine = get<VulkanGpuEngine>(VulkanGpuEngine::class.java)
+                if (VulkanCapabilityChecker.isVulkanAvailable(this@Lut2PhotoApp, logger)) {
+                    vulkanEngine.init(this@Lut2PhotoApp)
+                    Timber.i("Vulkan GPU engine initialized: ${vulkanEngine.isAvailable}")
+                } else {
+                    Timber.i("Vulkan not available, using CPU processing")
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Vulkan initialization failed")
+            }
+        }
     }
 
     private fun initializeBuiltinFilters() {
