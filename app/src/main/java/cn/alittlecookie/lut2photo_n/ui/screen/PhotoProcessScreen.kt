@@ -87,8 +87,8 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.icon.extended.Background
 import top.yukonga.miuix.kmp.icon.extended.Create
+import top.yukonga.miuix.kmp.icon.extended.FavoritesFill
 import top.yukonga.miuix.kmp.icon.extended.Ok
-import top.yukonga.miuix.kmp.icon.extended.Settings
 import top.yukonga.miuix.kmp.menu.OverlayIconCascadingDropdownMenu
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
@@ -417,8 +417,8 @@ fun PhotoProcessScreen(
                         entries = globalSettingsEntries
                     ) {
                         Icon(
-                            imageVector = MiuixIcons.Settings,
-                            contentDescription = "全局设置"
+                            imageVector = MiuixIcons.FavoritesFill,
+                            contentDescription = "默认设置"
                         )
                     }
                 }
