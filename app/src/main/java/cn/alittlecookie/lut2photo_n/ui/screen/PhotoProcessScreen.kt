@@ -79,9 +79,9 @@ import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
-import top.yukonga.miuix.kmp.basic.TabRowWithContour
+import top.yukonga.miuix.kmp.basic.SmallTopAppBar
+import top.yukonga.miuix.kmp.basic.TabRow
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.basic.rememberTopAppBarState
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
@@ -390,9 +390,8 @@ fun PhotoProcessScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
+            SmallTopAppBar(
                 title = "图片处理",
-                largeTitle = "图片处理",
                 scrollBehavior = scrollBehavior,
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
@@ -403,18 +402,6 @@ fun PhotoProcessScreen(
                     }
                 },
                 actions = {
-                    Text(
-                        text = "长按预览对比原图",
-                        fontSize = 12.sp,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                        modifier = Modifier
-                            .background(
-                                color = MiuixTheme.colorScheme.surfaceVariant,
-                                shape = RoundedCornerShape(16.dp)
-                            )
-                            .padding(horizontal = 12.dp, vertical = 4.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
                     OverlayIconCascadingDropdownMenu(
                         entries = globalSettingsEntries
                     ) {
@@ -457,7 +444,7 @@ fun PhotoProcessScreen(
             )
 
             val tabs = listOf("滤镜", "边框水印")
-            TabRowWithContour(
+            TabRow(
                 tabs = tabs,
                 selectedTabIndex = selectedTabIndex,
                 onTabSelected = { selectedTabIndex = it },
@@ -720,9 +707,19 @@ private fun MainPreviewArea(
                     }
                 }
         ) {
+            // Build original bitmap from cached bytes (same data as "原图" filter)
+            val originalBitmap = remember(cachedRgbaBytes, cachedWidth, cachedHeight) {
+                val bytes = cachedRgbaBytes
+                if (bytes != null && cachedWidth > 0) {
+                    val bmp = Bitmap.createBitmap(cachedWidth, cachedHeight, Bitmap.Config.ARGB_8888)
+                    bmp.copyPixelsFromBuffer(java.nio.ByteBuffer.wrap(bytes))
+                    bmp
+                } else null
+            }
+
             if (isLongPressed) {
                 AsyncImage(
-                    model = photoUri,
+                    model = originalBitmap ?: photoUri,
                     contentDescription = "Original",
                     contentScale = ContentScale.Fit,
                     modifier = Modifier.fillMaxSize()
@@ -786,7 +783,7 @@ private fun MainPreviewArea(
                         modifier = Modifier.size(12.dp)
                     )
                     Text(
-                        text = if (currentSettings.isCustomized) "已单独设置效果" else "已应用全局效果",
+                        text = if (currentSettings.isCustomized) "已单独设置效果\n长按查看原图" else "已应用全局效果\n长按查看原图",
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Medium,
                         color = Color.White
