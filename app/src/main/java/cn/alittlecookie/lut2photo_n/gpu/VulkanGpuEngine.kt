@@ -65,6 +65,15 @@ class VulkanGpuEngine(private val logger: LogManager) {
         }
     }
 
+    fun uploadCurves(curveData: FloatArray) {
+        if (!isAvailable || curveData.size != 1028) return
+        try {
+            nativeUploadCurves(nativeHandle, curveData)
+        } catch (e: Exception) {
+            logger.e(TAG, "Failed to upload curves", e)
+        }
+    }
+
     /**
      * Process RGBA8 image data through the GPU pipeline.
      * Native engine has its own mutex for thread safety.
@@ -88,6 +97,7 @@ class VulkanGpuEngine(private val logger: LogManager) {
     private external fun nativeDestroy(handle: Long)
     private external fun nativeIsAvailable(handle: Long): Boolean
     private external fun nativeUploadLut(handle: Long, lutData: FloatArray, lutSize: Int, lutSlot: Int)
+    private external fun nativeUploadCurves(handle: Long, curveData: FloatArray)
     private external fun nativeProcessImage(
         handle: Long,
         imageData: ByteArray,

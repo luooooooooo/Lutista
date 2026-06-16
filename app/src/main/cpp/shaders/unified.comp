@@ -32,9 +32,65 @@ layout(set = 0, binding = 4) uniform FilterParams {
     int enableGrain;
     int width;
     int height;
-    float _pad0;
-    float _pad1;
+    // LCH adjustments: 8 zones * 3 (lightness, chroma, hue)
+    float lchRed_L;     float lchRed_C;     float lchRed_H;
+    float lchOrange_L;  float lchOrange_C;  float lchOrange_H;
+    float lchYellow_L;  float lchYellow_C;  float lchYellow_H;
+    float lchGreen_L;   float lchGreen_C;   float lchGreen_H;
+    float lchCyan_L;    float lchCyan_C;    float lchCyan_H;
+    float lchBlue_L;    float lchBlue_C;    float lchBlue_H;
+    float lchPurple_L;  float lchPurple_C;  float lchPurple_H;
+    float lchSkin_L;    float lchSkin_C;    float lchSkin_H;
+    int enableLch;
+    int enableCurve;
+    // Extended grain parameters
+    float midtoneSizeRatio;
+    float redChannelRatio;
+    float blueChannelRatio;
+    float channelCorrelation;
+    float colorPreservation;
+    float grainSize;
 } params;
+
+layout(std430, set = 0, binding = 5) readonly buffer CurveData {
+    float curves[1028]; // R:0-255, G:256-511, B:512-767, W:768-1023, Sentinels:1024-1027
+};
+
+// sRGB to linear
+vec3 srgbToLinear(vec3 s) {
+    return mix(s / 12.92, pow((s + 0.055) / 1.055, vec3(2.4)), step(0.04045, s));
+}
+vec3 linearToSrgb(vec3 l) {
+    return mix(l * 12.92, 1.055 * pow(l, vec3(1.0/2.4)) - 0.055, step(0.0031308, l));
+}
+// Linear sRGB to Oklab
+vec3 linearToOklab(vec3 c) {
+    float l = 0.4122214708*c.r + 0.5363325363*c.g + 0.0514459929*c.b;
+    float m = 0.2119034982*c.r + 0.6806995451*c.g + 0.1073969566*c.b;
+    float s = 0.0883024619*c.r + 0.2817188376*c.g + 0.6299787005*c.b;
+    float l_ = pow(l, 1.0/3.0);
+    float m_ = pow(m, 1.0/3.0);
+    float s_ = pow(s, 1.0/3.0);
+    return vec3(
+        0.2104542553*l_ + 0.7936177850*m_ - 0.0040720468*s_,
+        1.9779984951*l_ - 2.4285922050*m_ + 0.4505937099*s_,
+        0.0259040371*l_ + 0.7827717662*m_ - 0.8086757660*s_
+    );
+}
+// Oklab to linear sRGB
+vec3 oklabToLinear(vec3 lab) {
+    float l_ = lab.x + 0.3963377774 * lab.y + 0.2158037573 * lab.z;
+    float m_ = lab.x - 0.1055613458 * lab.y - 0.0638541728 * lab.z;
+    float s_ = lab.x - 0.0894841775 * lab.y - 1.2914855480 * lab.z;
+    float l = l_*l_*l_;
+    float m = m_*m_*m_;
+    float s = s_*s_*s_;
+    return vec3(
+         4.0767416621*l - 3.3077115913*m + 0.2309699292*s,
+        -1.2684380046*l + 2.6097574011*m - 0.3413193965*s,
+        -0.0041960863*l - 0.7034186147*m + 1.7076147010*s
+    );
+}
 
 float random(vec2 co, float seed) {
     return fract(sin(dot(co + seed, vec2(12.9898, 78.233))) * 43758.5453);
@@ -98,11 +154,11 @@ void main() {
     // 5. Brightness: highlights/shadows
     if (params.highlights != 0.0 || params.shadows != 0.0) {
         float lum = dot(c, vec3(0.299, 0.587, 0.114));
-        if (lum > 0.5 && params.highlights != 0.0) {
-            c += (params.highlights / 100.0) * lum * 0.5;
-        } else if (lum <= 0.5 && params.shadows != 0.0) {
-            c += (params.shadows / 100.0) * (1.0 - lum) * 0.5;
-        }
+        float highlightMask = smoothstep(0.5, 1.0, lum);
+        float shadowMask = 1.0 - smoothstep(0.0, 0.5, lum);
+        float adj = (params.highlights / 100.0) * highlightMask * 0.3
+                  + (params.shadows / 100.0) * shadowMask * 0.3;
+        c += adj;
     }
 
     // 6. Color: saturation
@@ -124,33 +180,105 @@ void main() {
         c.g += params.tint / 200.0;
     }
 
-    // 9. Vignette
-    if (params.vignetteStrength > 0.0) {
-        vec2 center = vec2(float(params.width) / 2.0, float(params.height) / 2.0);
-        float maxDist = length(center);
-        vec2 delta = vec2(float(coord.x), float(coord.y)) - center;
-        float dist = length(delta);
-        float vig = 1.0 - (dist / maxDist * params.vignetteStrength / 100.0);
-        c *= clamp(vig, 0.0, 1.0);
+    // 9. Curve: White (master) maps all channels, then per-channel curves modify individually.
+    // Sentinels at 1024-1027 (outside LUT range, no corruption).
+    if (params.enableCurve == 1) {
+        if (curves[1027] > 0.5) {
+            c.r = curves[768 + clamp(int(clamp(c.r, 0.0, 1.0) * 255.0), 0, 255)];
+            c.g = curves[768 + clamp(int(clamp(c.g, 0.0, 1.0) * 255.0), 0, 255)];
+            c.b = curves[768 + clamp(int(clamp(c.b, 0.0, 1.0) * 255.0), 0, 255)];
+            c = clamp(c, 0.0, 1.0);
+        }
+        if (curves[1024] > 0.5) c.r = curves[clamp(int(clamp(c.r, 0.0, 1.0) * 255.0), 0, 255)];
+        if (curves[1025] > 0.5) c.g = curves[256 + clamp(int(clamp(c.g, 0.0, 1.0) * 255.0), 0, 255)];
+        if (curves[1026] > 0.5) c.b = curves[512 + clamp(int(clamp(c.b, 0.0, 1.0) * 255.0), 0, 255)];
+        c = clamp(c, 0.0, 1.0);
     }
 
-    // 10. Grain
+    // 10. LCH
+    if (params.enableLch == 1) {
+        vec3 lin = srgbToLinear(c);
+        vec3 oklab = linearToOklab(lin);
+        float L = oklab.x;
+        float C = length(oklab.yz);
+        float H = atan(oklab.z, oklab.y);
+        if (H < 0.0) H += 6.28318;
+        float centers[8] = float[8](0.0, 0.5, 1.05, 2.1, 3.14, 4.2, 5.2, 0.4);
+        float zoneWidth = 0.7854;
+        float totalL = 0.0, totalC = 0.0, totalH = 0.0;
+        float totalWeight = 0.0;
+        vec3 adj[8] = vec3[8](
+            vec3(params.lchRed_L, params.lchRed_C, params.lchRed_H),
+            vec3(params.lchOrange_L, params.lchOrange_C, params.lchOrange_H),
+            vec3(params.lchYellow_L, params.lchYellow_C, params.lchYellow_H),
+            vec3(params.lchGreen_L, params.lchGreen_C, params.lchGreen_H),
+            vec3(params.lchCyan_L, params.lchCyan_C, params.lchCyan_H),
+            vec3(params.lchBlue_L, params.lchBlue_C, params.lchBlue_H),
+            vec3(params.lchPurple_L, params.lchPurple_C, params.lchPurple_H),
+            vec3(params.lchSkin_L, params.lchSkin_C, params.lchSkin_H)
+        );
+        for (int i = 0; i < 8; i++) {
+            float diff = abs(H - centers[i]);
+            if (diff > 3.14159) diff = 6.28318 - diff;
+            float sigma = zoneWidth * 0.6;
+            float weight = exp(-diff * diff / (2.0 * sigma * sigma));
+            if (weight > 0.01) {
+                totalL += adj[i].x * weight;
+                totalC += adj[i].y * weight;
+                totalH += adj[i].z * weight;
+                totalWeight += weight;
+            }
+        }
+        if (totalWeight > 0.0) {
+            L = clamp(L + totalL / 100.0 * 0.5, 0.0, 1.0);
+            C = max(C + totalC / 100.0 * 0.3, 0.0);
+            H += totalH / 100.0 * 0.5;
+            if (H < 0.0) H += 6.28318;
+            if (H >= 6.28318) H -= 6.28318;
+            oklab = vec3(L, C * cos(H), C * sin(H));
+            lin = oklabToLinear(oklab);
+            c = linearToSrgb(clamp(lin, 0.0, 1.0));
+        }
+    }
+
+    // 11. Grain
     if (params.enableGrain == 1 && params.grainStrength > 0.0) {
         float lum = dot(c, vec3(0.299, 0.587, 0.114));
         float strengthRatio = getGrainRatio(lum, params.shadowThreshold, params.highlightThreshold,
                                             params.shadowGrainRatio, params.midtoneGrainRatio, params.highlightGrainRatio);
         float sizeRatio = getGrainRatio(lum, params.shadowThreshold, params.highlightThreshold,
-                                        params.shadowSizeRatio, 1.0, params.highlightSizeRatio);
+                                        params.shadowSizeRatio, params.midtoneSizeRatio, params.highlightSizeRatio);
         float noiseStrength = params.grainStrength * strengthRatio * sizeRatio * 0.005;
-        vec2 texSize = vec2(float(params.width), float(params.height));
-        vec2 grainUV = vec2(coord) / (sizeRatio * 500.0);
+        vec2 grainUV = vec2(coord) / (params.grainSize * sizeRatio * 500.0);
         float baseNoise = gaussianNoise(grainUV, params.grainSeed);
+        float redNoise = mix(gaussianNoise(grainUV, params.grainSeed + 0.1), baseNoise, params.channelCorrelation);
+        float greenNoise = mix(gaussianNoise(grainUV, params.grainSeed + 0.2), baseNoise, params.channelCorrelation);
+        float blueNoise = mix(gaussianNoise(grainUV, params.grainSeed + 0.3), baseNoise, params.channelCorrelation);
         vec3 noise = vec3(
-            mix(gaussianNoise(grainUV, params.grainSeed + 0.1), baseNoise, 0.7),
-            mix(gaussianNoise(grainUV, params.grainSeed + 0.2), baseNoise, 0.7),
-            mix(gaussianNoise(grainUV, params.grainSeed + 0.3), baseNoise, 0.7)
+            redNoise * params.redChannelRatio,
+            greenNoise,
+            blueNoise * params.blueChannelRatio
         ) * noiseStrength;
+        vec3 uniformNoise = vec3(baseNoise * noiseStrength);
+        noise = mix(noise, uniformNoise, 1.0 - params.colorPreservation);
         c += noise;
+    }
+
+    // 12. Vignette
+    if (params.vignetteStrength != 0.0) {
+        vec2 center = vec2(float(params.width) / 2.0, float(params.height) / 2.0);
+        float maxDist = length(center);
+        vec2 delta = vec2(float(coord.x), float(coord.y)) - center;
+        float dist = length(delta);
+        float normDist = dist / maxDist;
+        float vig;
+        if (params.vignetteStrength > 0.0) {
+            vig = 1.0 - (normDist * params.vignetteStrength / 100.0);
+            c *= clamp(vig, 0.0, 1.0);
+        } else {
+            vig = 1.0 + (normDist * (-params.vignetteStrength) / 100.0);
+            c *= clamp(vig, 0.0, 2.0);
+        }
     }
 
     imageStore(outputImage, coord, vec4(clamp(c, 0.0, 1.0), color.a));

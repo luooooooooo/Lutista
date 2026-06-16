@@ -7,14 +7,8 @@ import cn.alittlecookie.lut2photo_n.data.database.dao.TaskDao
 import cn.alittlecookie.lut2photo_n.data.database.dao.WatermarkDao
 import cn.alittlecookie.lut2photo_n.data.repository.FilterRepository
 import cn.alittlecookie.lut2photo_n.data.repository.TaskRepository
-import cn.alittlecookie.lut2photo_n.domain.engine.BrightnessProcessor
-import cn.alittlecookie.lut2photo_n.domain.engine.ColorProcessor
-import cn.alittlecookie.lut2photo_n.domain.engine.CurveProcessor
-import cn.alittlecookie.lut2photo_n.domain.engine.GrainProcessor
 import cn.alittlecookie.lut2photo_n.domain.engine.ImageProcessingEngine
-import cn.alittlecookie.lut2photo_n.domain.engine.LchProcessor
 import cn.alittlecookie.lut2photo_n.domain.engine.LutProcessor
-import cn.alittlecookie.lut2photo_n.domain.engine.VignetteProcessor
 import cn.alittlecookie.lut2photo_n.domain.usecase.ApplyFilterUseCase
 import cn.alittlecookie.lut2photo_n.domain.usecase.ExportFilterUseCase
 import cn.alittlecookie.lut2photo_n.domain.usecase.ImportLutUseCase
@@ -70,12 +64,6 @@ val appModule = module {
 
     // Image Processing Engine
     singleOf(::LutProcessor)
-    singleOf(::BrightnessProcessor)
-    singleOf(::ColorProcessor)
-    singleOf(::CurveProcessor)
-    singleOf(::LchProcessor)
-    singleOf(::VignetteProcessor)
-    singleOf(::GrainProcessor)
     singleOf(::VulkanGpuEngine)
     singleOf(::ImageProcessingEngine)
 

@@ -48,6 +48,30 @@ bool VulkanEngine::init(const std::map<std::string, std::vector<uint8_t>>& shade
         return false;
     }
 
+    // Create curve data SSBO (1028 floats = 4112 bytes: 1024 LUT + 4 sentinels)
+    if (!m_curveBuffer.create(m_device, 4112,
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
+        LOGE("Failed to create curve buffer");
+        return false;
+    }
+
+    // Initialize curve buffer with identity (default no-op curves)
+    float identityCurves[1028];
+    for (int i = 0; i < 256; i++) {
+        float v = i / 255.0f;
+        identityCurves[i] = v;          // R
+        identityCurves[256 + i] = v;    // G
+        identityCurves[512 + i] = v;    // B
+        identityCurves[768 + i] = v;    // W (master)
+    }
+    // Sentinel flags at 1024-1027: 0 = no user points
+    identityCurves[1024] = 0.0f;
+    identityCurves[1025] = 0.0f;
+    identityCurves[1026] = 0.0f;
+    identityCurves[1027] = 0.0f;
+    m_curveBuffer.upload(m_device.device(), identityCurves, 4112);
+
     m_initialized = true;
     LOGI("VulkanEngine initialized successfully (unified RGBA8 pipeline)");
     return true;
@@ -64,6 +88,7 @@ void VulkanEngine::destroy() {
 
     // Buffers
     m_uboBuffer.destroy(dev);
+    m_curveBuffer.destroy(dev);
     m_transferBuffer.destroy(dev);
 
     // Images
@@ -107,17 +132,18 @@ bool VulkanEngine::isAvailable() const {
 // ============================================================================
 // createDescriptorLayout
 //
-// Single layout with 5 bindings:
+// Single layout with 6 bindings:
 //   0: storage image (input, readonly)
 //   1: storage image (output)
 //   2: combined image sampler (LUT1 3D texture)
 //   3: combined image sampler (LUT2 3D texture)
 //   4: uniform buffer (FilterParams)
+//   5: storage buffer (CurveData SSBO)
 // ============================================================================
 bool VulkanEngine::createDescriptorLayout() {
     VkDevice dev = m_device.device();
 
-    VkDescriptorSetLayoutBinding bindings[5]{};
+    VkDescriptorSetLayoutBinding bindings[6]{};
 
     // binding 0: storage image (input, readonly)
     bindings[0].binding = 0;
@@ -149,9 +175,15 @@ bool VulkanEngine::createDescriptorLayout() {
     bindings[4].descriptorCount = 1;
     bindings[4].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
+    // binding 5: storage buffer (CurveData SSBO)
+    bindings[5].binding = 5;
+    bindings[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    bindings[5].descriptorCount = 1;
+    bindings[5].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = 5;
+    layoutInfo.bindingCount = 6;
     layoutInfo.pBindings = bindings;
 
     if (vkCreateDescriptorSetLayout(dev, &layoutInfo, nullptr, &m_descriptorSetLayout) != VK_SUCCESS) {
@@ -159,7 +191,7 @@ bool VulkanEngine::createDescriptorLayout() {
         return false;
     }
 
-    LOGI("Unified descriptor set layout created (5 bindings)");
+    LOGI("Unified descriptor set layout created (6 bindings)");
     return true;
 }
 
@@ -170,14 +202,15 @@ bool VulkanEngine::createDescriptorPool() {
     VkDescriptorPoolSize sizes[] = {
         {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,          4}, // 2 storage images x 2 descriptor sets
         {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,  4}, // 2 LUT samplers x 2 descriptor sets
-        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,          2}  // 1 UBO x 2 descriptor sets
+        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,          2}, // 1 UBO x 2 descriptor sets
+        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,          2}  // 1 curve SSBO x 2 descriptor sets
     };
 
     VkDescriptorPoolCreateInfo info{};
     info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
     info.maxSets = 2; // ping-pong: set A and set B
-    info.poolSizeCount = 3;
+    info.poolSizeCount = 4;
     info.pPoolSizes = sizes;
 
     if (vkCreateDescriptorPool(m_device.device(), &info, nullptr, &m_descriptorPool) != VK_SUCCESS) {
@@ -238,7 +271,7 @@ bool VulkanEngine::createPipeline() {
 // createUbo
 // ============================================================================
 bool VulkanEngine::createUbo() {
-    // FilterParams is 112 bytes, but we round up to the device's
+    // FilterParams is now 52 fields * 4 = 208 bytes, but we round up to the device's
     // minUniformBufferOffsetAlignment (typically 256 or 64).
     // We just allocate 256 bytes to be safe.
     constexpr VkDeviceSize uboSize = 256;
@@ -265,7 +298,7 @@ bool VulkanEngine::uploadUbo(const FilterParams& params) {
 // ============================================================================
 // updateDescriptorSets
 //
-// Writes all 5 bindings for both descriptor sets (A and B).
+// Writes all 6 bindings for both descriptor sets (A and B).
 // Set A: read image[0], write image[1]
 // Set B: read image[1], write image[0]
 // ============================================================================
@@ -298,14 +331,19 @@ void VulkanEngine::updateDescriptorSets() {
     uboInfo.offset = 0;
     uboInfo.range = sizeof(FilterParams);
 
+    VkDescriptorBufferInfo curveInfo{};
+    curveInfo.buffer = m_curveBuffer.buffer();
+    curveInfo.offset = 0;
+    curveInfo.range = 4112; // 1028 floats (1024 LUT + 4 sentinels)
+
     // We'll write both sets in one call.
-    // Each set has 5 bindings -> 10 writes total.
-    VkWriteDescriptorSet writes[10]{};
+    // Each set has 6 bindings -> 12 writes total.
+    VkWriteDescriptorSet writes[12]{};
 
     for (int set = 0; set < 2; set++) {
         int readImg = set;       // set 0 reads image[0], set 1 reads image[1]
         int writeImg = 1 - set;  // set 0 writes image[1], set 1 writes image[0]
-        int base = set * 5;
+        int base = set * 6;
 
         // binding 0: input storage image (readonly)
         static VkDescriptorImageInfo imgInfoA[2];
@@ -354,9 +392,17 @@ void VulkanEngine::updateDescriptorSets() {
         writes[base + 4].descriptorCount = 1;
         writes[base + 4].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         writes[base + 4].pBufferInfo = &uboInfo;
+
+        // binding 5: curve SSBO
+        writes[base + 5].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[base + 5].dstSet = m_descriptorSets[set];
+        writes[base + 5].dstBinding = 5;
+        writes[base + 5].descriptorCount = 1;
+        writes[base + 5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        writes[base + 5].pBufferInfo = &curveInfo;
     }
 
-    vkUpdateDescriptorSets(dev, 10, writes, 0, nullptr);
+    vkUpdateDescriptorSets(dev, 12, writes, 0, nullptr);
 }
 
 // ============================================================================
@@ -502,6 +548,17 @@ void VulkanEngine::uploadLut(const float* lutData, uint32_t lutSize, int slot) {
     LOGI("LUT uploaded (slot %d, size %u): idle=%lldms upload=%lldms total=%lldms",
          slot, lutSize,
          (long long)((t1-t0)/1000000), (long long)((t2-t1)/1000000), (long long)((t2-t0)/1000000));
+}
+
+// ============================================================================
+// uploadCurves -- upload 1024 floats of curve lookup data to SSBO
+// ============================================================================
+void VulkanEngine::uploadCurves(const float* curveData) {
+    if (!m_initialized || curveData == nullptr) return;
+
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_curveBuffer.upload(m_device.device(), curveData, 4112);
+    LOGD("Curve data uploaded (1028 floats)");
 }
 
 // ============================================================================

@@ -81,7 +81,8 @@ enum class MoreAction {
 @Composable
 fun RecipeRoomScreen(
     modifier: Modifier = Modifier,
-    scrollBehavior: ScrollBehavior? = null
+    scrollBehavior: ScrollBehavior? = null,
+    onEditFilter: (Long) -> Unit = {}
 ) {
     val filterRepository: FilterRepository = koinInject()
     val builtinFilterManager: BuiltinFilterManager = koinInject()
@@ -141,7 +142,7 @@ fun RecipeRoomScreen(
                     watermarks.add(to.index, item)
                 }
             },
-            onEditClick = { /* TODO */ },
+            onEditClick = { item -> onEditFilter(item.id) },
             onMoreAction = { item, action ->
                 when (action) {
                     MoreAction.TOGGLE_ENABLE -> {

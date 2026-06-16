@@ -7,6 +7,7 @@ import cn.alittlecookie.lut2photo_n.domain.engine.ImageProcessingEngine
 import cn.alittlecookie.lut2photo_n.manager.LogManager
 import cn.alittlecookie.lut2photo_n.manager.SettingsManager
 import cn.alittlecookie.lut2photo_n.util.FileUtils
+import cn.alittlecookie.lut2photo_n.util.FilterConfigJson.toConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.opencv.imgcodecs.Imgcodecs
@@ -85,22 +86,6 @@ class ImageProcessingService(
     }
 
     private fun mapToFilterConfig(entity: cn.alittlecookie.lut2photo_n.data.database.entity.FilterEntity): FilterConfig {
-        return FilterConfig(
-            id = entity.id,
-            name = entity.name,
-            lutPath1 = entity.lutPath1,
-            lutConcentration1 = entity.lutConcentration1,
-            lutPath2 = entity.lutPath2,
-            lutConcentration2 = entity.lutConcentration2,
-            lutPrecision = entity.lutPrecision,
-            exposure = entity.exposure,
-            contrast = entity.contrast,
-            highlights = entity.highlights,
-            shadows = entity.shadows,
-            saturation = entity.saturation,
-            colorTemperature = entity.colorTemperature,
-            tint = entity.tint,
-            vignetteStrength = entity.vignetteStrength
-        )
+        return entity.toConfig()
     }
 }

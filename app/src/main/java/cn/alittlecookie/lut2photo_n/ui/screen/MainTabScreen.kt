@@ -27,9 +27,11 @@ enum class MainPage(val label: String, val icon: androidx.compose.ui.graphics.ve
 @Composable
 fun MainTabScreen(
     onPhotoSelected: (List<String>) -> Unit,
-    launchPicker: () -> Unit = {}
+    launchPicker: () -> Unit = {},
+    onEditFilter: (Long) -> Unit = {},
+    initialPage: Int = 0
 ) {
-    var selectedPage by rememberSaveable { mutableIntStateOf(0) }
+    var selectedPage by rememberSaveable { mutableIntStateOf(initialPage) }
     val pages = MainPage.entries
     val scrollBehavior = MiuixScrollBehavior(rememberTopAppBarState())
 
@@ -72,7 +74,8 @@ fun MainTabScreen(
             )
             1 -> RecipeRoomScreen(
                 modifier = Modifier.padding(top = paddingValues.calculateTopPadding()),
-                scrollBehavior = scrollBehavior
+                scrollBehavior = scrollBehavior,
+                onEditFilter = onEditFilter
             )
             2 -> SettingsScreen(
                 modifier = Modifier.padding(top = paddingValues.calculateTopPadding()),

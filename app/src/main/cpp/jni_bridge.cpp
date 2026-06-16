@@ -84,9 +84,20 @@ static void nativeUploadLut(JNIEnv* env, jobject thiz, jlong handle,
     env->ReleaseFloatArrayElements(lutData, data, JNI_ABORT);
 }
 
+// nativeUploadCurves:
+//   curveData: FloatArray (1024 floats)
+static void nativeUploadCurves(JNIEnv* env, jobject thiz, jlong handle,
+                               jfloatArray curveData) {
+    auto* engine = reinterpret_cast<VulkanEngine*>(handle);
+    if (!engine || !engine->isAvailable()) return;
+    jfloat* data = env->GetFloatArrayElements(curveData, nullptr);
+    engine->uploadCurves(reinterpret_cast<const float*>(data));
+    env->ReleaseFloatArrayElements(curveData, data, JNI_ABORT);
+}
+
 // nativeProcessImage:
 //   imageData: ByteArray (RGBA8, length = width * height * 4)
-//   params:    FloatArray (24 floats: filter params, width/height from JNI args)
+//   params:    FloatArray (50 floats: filter params + LCH + enable flags)
 //   Returns:   ByteArray (RGBA8 result) or null on failure
 static jbyteArray nativeProcessImage(JNIEnv* env, jobject thiz, jlong handle,
                                       jbyteArray imageData, jint width, jint height,
@@ -98,7 +109,7 @@ static jbyteArray nativeProcessImage(JNIEnv* env, jobject thiz, jlong handle,
     jbyte* data = env->GetByteArrayElements(imageData, nullptr);
     jfloat* paramArr = env->GetFloatArrayElements(params, nullptr);
 
-    // Build FilterParams from the float array
+    // Build FilterParams from the float array (56 floats)
     FilterParams fp{};
     int idx = 0;
     fp.lutStrength         = paramArr[idx++];
@@ -127,8 +138,41 @@ static jbyteArray nativeProcessImage(JNIEnv* env, jobject thiz, jlong handle,
     fp.enableGrain         = static_cast<int>(paramArr[idx++]);
     fp.width               = static_cast<int>(width);
     fp.height              = static_cast<int>(height);
-    fp._pad0               = 0.0f;
-    fp._pad1               = 0.0f;
+    // LCH adjustments: 8 zones x 3 (lightness, chroma, hue) = indices 24-47
+    fp.lchRed_L    = paramArr[idx++];
+    fp.lchRed_C    = paramArr[idx++];
+    fp.lchRed_H    = paramArr[idx++];
+    fp.lchOrange_L = paramArr[idx++];
+    fp.lchOrange_C = paramArr[idx++];
+    fp.lchOrange_H = paramArr[idx++];
+    fp.lchYellow_L = paramArr[idx++];
+    fp.lchYellow_C = paramArr[idx++];
+    fp.lchYellow_H = paramArr[idx++];
+    fp.lchGreen_L  = paramArr[idx++];
+    fp.lchGreen_C  = paramArr[idx++];
+    fp.lchGreen_H  = paramArr[idx++];
+    fp.lchCyan_L   = paramArr[idx++];
+    fp.lchCyan_C   = paramArr[idx++];
+    fp.lchCyan_H   = paramArr[idx++];
+    fp.lchBlue_L   = paramArr[idx++];
+    fp.lchBlue_C   = paramArr[idx++];
+    fp.lchBlue_H   = paramArr[idx++];
+    fp.lchPurple_L = paramArr[idx++];
+    fp.lchPurple_C = paramArr[idx++];
+    fp.lchPurple_H = paramArr[idx++];
+    fp.lchSkin_L   = paramArr[idx++];
+    fp.lchSkin_C   = paramArr[idx++];
+    fp.lchSkin_H   = paramArr[idx++];
+    // Enable flags
+    fp.enableLch           = static_cast<int>(paramArr[idx++]);
+    fp.enableCurve         = static_cast<int>(paramArr[idx++]);
+    // Extended grain parameters
+    fp.midtoneSizeRatio    = paramArr[idx++];
+    fp.redChannelRatio     = paramArr[idx++];
+    fp.blueChannelRatio    = paramArr[idx++];
+    fp.channelCorrelation  = paramArr[idx++];
+    fp.colorPreservation   = paramArr[idx++];
+    fp.grainSize           = paramArr[idx++];
 
     bool success = engine->processImage(reinterpret_cast<uint8_t*>(data),
                                          static_cast<uint32_t>(width),
@@ -158,6 +202,7 @@ static JNINativeMethod g_methods[] = {
     {"nativeDestroy",        "(J)V",                    (void*)nativeDestroy},
     {"nativeIsAvailable",    "(J)Z",                    (void*)nativeIsAvailable},
     {"nativeUploadLut",      "(J[FII)V",                (void*)nativeUploadLut},
+    {"nativeUploadCurves",   "(J[F)V",                  (void*)nativeUploadCurves},
     {"nativeProcessImage",   "(J[BII[F)[B",             (void*)nativeProcessImage},
 };
 

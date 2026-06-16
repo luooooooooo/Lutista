@@ -33,13 +33,6 @@ if(ANDROID_ABI STREQUAL "arm64-v8a")
 
     set(SHADERS
         unified.comp
-        lut.comp
-        brightness.comp
-        color.comp
-        curve.comp
-        lch.comp
-        vignette.comp
-        grain.comp
     )
 
     set(SPIRV_OUTPUTS "")

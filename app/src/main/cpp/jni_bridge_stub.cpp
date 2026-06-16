@@ -6,6 +6,7 @@ static jlong nativeInit(JNIEnv* env, jobject thiz, jobject shaderDataMap) { retu
 static void nativeDestroy(JNIEnv* env, jobject thiz, jlong handle) {}
 static jboolean nativeIsAvailable(JNIEnv* env, jobject thiz, jlong handle) { return JNI_FALSE; }
 static void nativeUploadLut(JNIEnv* env, jobject thiz, jlong handle, jfloatArray lutData, jint lutSize, jint lutSlot) {}
+static void nativeUploadCurves(JNIEnv* env, jobject thiz, jlong handle, jfloatArray curveData) {}
 static jbyteArray nativeProcessImage(JNIEnv* env, jobject thiz, jlong handle, jbyteArray imageData, jint width, jint height, jfloatArray params) { return nullptr; }
 
 static const char* VULKAN_GPU_ENGINE_CLASS = "cn/alittlecookie/lut2photo_n/gpu/VulkanGpuEngine";
@@ -15,6 +16,7 @@ static JNINativeMethod g_methods[] = {
     {"nativeDestroy",        "(J)V",                  (void*)nativeDestroy},
     {"nativeIsAvailable",    "(J)Z",                  (void*)nativeIsAvailable},
     {"nativeUploadLut",      "(J[FII)V",              (void*)nativeUploadLut},
+    {"nativeUploadCurves",   "(J[F)V",                (void*)nativeUploadCurves},
     {"nativeProcessImage",   "(J[BII[F)[B",           (void*)nativeProcessImage},
 };
 

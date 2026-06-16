@@ -20,12 +20,6 @@ class ImageProcessingEngine(
     private val logger: LogManager,
     private val lutParser: LutParser,
     private val lutProcessor: LutProcessor,
-    private val brightnessProcessor: BrightnessProcessor,
-    private val colorProcessor: ColorProcessor,
-    private val curveProcessor: CurveProcessor,
-    private val lchProcessor: LchProcessor,
-    private val vignetteProcessor: VignetteProcessor,
-    private val grainProcessor: GrainProcessor,
     private val watermarkProcessor: WatermarkProcessor,
     private val vulkanGpuEngine: VulkanGpuEngine
 ) {
@@ -49,22 +43,16 @@ class ImageProcessingEngine(
     ): Bitmap? {
         if (!vulkanGpuEngine.isAvailable) return null
         try {
-            val t0 = System.nanoTime()
             uploadLutIfNeeded(filter)
-            val t1 = System.nanoTime()
+            uploadCurvesIfNeeded(filter)
             val params = buildGpuParams(filter)
             val inputCopy = rgbaBytes.copyOf()
-            val t2 = System.nanoTime()
             val resultBytes = vulkanGpuEngine.processImage(inputCopy, width, height, params)
                 ?: return null
-            val t3 = System.nanoTime()
+
+            // GPU result includes all processing (LUT, brightness, color, vignette, grain, curve, LCH)
             val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
             bitmap.copyPixelsFromBuffer(java.nio.ByteBuffer.wrap(resultBytes))
-            val t4 = System.nanoTime()
-            logger.d(TAG, "GPU preview ${width}x${height}: " +
-                "LUT=${(t1-t0)/1_000_000}ms, copyOf=${(t2-t1)/1_000_000}ms, " +
-                "gpu=${(t3-t2)/1_000_000}ms, bitmap=${(t4-t3)/1_000_000}ms, " +
-                "total=${(t4-t0)/1_000_000}ms")
             return bitmap
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
@@ -93,6 +81,7 @@ class ImageProcessingEngine(
             inputBitmap.copyPixelsToBuffer(buffer)
 
             uploadLutIfNeeded(filter)
+            uploadCurvesIfNeeded(filter)
             val params = buildGpuParams(filter)
             val resultBytes = vulkanGpuEngine.processImage(rgbaBytes, width, height, params)
             inputBitmap.recycle()
@@ -144,16 +133,61 @@ class ImageProcessingEngine(
         }
     }
 
-    fun processImagePreview(input: Mat, filter: FilterConfig): Mat {
-        if (vulkanGpuEngine.isAvailable) {
-            try {
-                val result = processImageGpu(input, filter)
-                if (result != null) return result
-            } catch (e: Exception) {
-                logger.w(TAG, "GPU processing failed, falling back to CPU", e)
-            }
+    private var lastCurveHash: Int = 0
+
+    private fun uploadCurvesIfNeeded(filter: FilterConfig) {
+        val curveData = buildCurveData(filter.curveConfig)
+        val hash = curveData.contentHashCode()
+        if (hash != lastCurveHash) {
+            vulkanGpuEngine.uploadCurves(curveData)
+            lastCurveHash = hash
+            logger.d(TAG, "Curve data uploaded to GPU")
         }
-        return processImageCpu(input, filter)
+    }
+
+    private fun buildCurveData(config: cn.alittlecookie.lut2photo_n.data.model.CurveConfig): FloatArray {
+        // 1028 floats: 1024 LUT + 4 sentinel flags
+        val curves = FloatArray(1028)
+        val redCurve = buildChannelCurve(config.redChannel)
+        val greenCurve = buildChannelCurve(config.greenChannel)
+        val blueCurve = buildChannelCurve(config.blueChannel)
+        val whiteCurve = buildChannelCurve(config.whiteChannel)
+        for (i in 0 until 256) {
+            curves[i] = redCurve[i] / 255f
+            curves[256 + i] = greenCurve[i] / 255f
+            curves[512 + i] = blueCurve[i] / 255f
+            curves[768 + i] = whiteCurve[i] / 255f
+        }
+        // Sentinel flags at 1024-1027: OUTSIDE the LUT range, no corruption
+        curves[1024] = if (config.redChannel.isNotEmpty()) 1f else 0f
+        curves[1025] = if (config.greenChannel.isNotEmpty()) 1f else 0f
+        curves[1026] = if (config.blueChannel.isNotEmpty()) 1f else 0f
+        curves[1027] = if (config.whiteChannel.isNotEmpty()) 1f else 0f
+        return curves
+    }
+
+    private fun buildChannelCurve(points: List<cn.alittlecookie.lut2photo_n.data.model.FloatPoint>): IntArray {
+        val lut = IntArray(256)
+        val middlePoints = points.filter { it.x > 0.001f && it.x < 0.999f }
+        val startPt = points.firstOrNull()?.takeIf { it.x <= 0.001f }
+            ?: cn.alittlecookie.lut2photo_n.data.model.FloatPoint(0f, 0f)
+        val endPt = points.lastOrNull()?.takeIf { it.x >= 0.999f }
+            ?: cn.alittlecookie.lut2photo_n.data.model.FloatPoint(1f, 1f)
+        val sorted = (listOf(startPt) + middlePoints + listOf(endPt)).sortedBy { it.x }
+        for (i in 0 until 256) {
+            val x = i.toFloat() / 255f
+            val y = cn.alittlecookie.lut2photo_n.util.CurveInterpolator.interpolate(sorted, x)
+            lut[i] = (y.coerceIn(0f, 1f) * 255).toInt().coerceIn(0, 255)
+        }
+        return lut
+    }
+
+    fun processImagePreview(input: Mat, filter: FilterConfig): Mat {
+        if (!vulkanGpuEngine.isAvailable) {
+            throw IllegalStateException("Vulkan GPU not available - download CPU version")
+        }
+        val result = processImageGpu(input, filter)
+        return result ?: throw IllegalStateException("GPU processing failed")
     }
 
     private fun processImageGpu(input: Mat, filter: FilterConfig): Mat? {
@@ -167,15 +201,8 @@ class ImageProcessingEngine(
         rgbaMat.get(0, 0, rgbaData)
         rgbaMat.release()
 
-        // Upload LUTs if needed
-        if (filter.lutPath1 != null) {
-            val lut1 = lutProcessor.loadLutForGpu(filter.lutPath1)
-            if (lut1 != null) vulkanGpuEngine.uploadLut(lut1, 0)
-        }
-        if (filter.lutPath2 != null) {
-            val lut2 = lutProcessor.loadLutForGpu(filter.lutPath2)
-            if (lut2 != null) vulkanGpuEngine.uploadLut(lut2, 1)
-        }
+        uploadLutIfNeeded(filter)
+        uploadCurvesIfNeeded(filter)
 
         // Build params array
         val params = buildGpuParams(filter)
@@ -191,14 +218,15 @@ class ImageProcessingEngine(
     }
 
     private fun buildGpuParams(filter: FilterConfig): FloatArray {
-        // FilterParams layout: 28 floats total (24 from here + width/height/padding from JNI)
-        val params = FloatArray(24)
+        // FilterParams: 56 floats in paramArr (width/height from JNI function args)
+        // Layout: 12 base + 9 grain + 3 enable + 24 LCH + 2 enable + 6 extended grain
+        val params = FloatArray(56)
         var idx = 0
         params[idx++] = if (lut1Uploaded) filter.lutConcentration1 else 0f  // lutStrength (0 if no LUT)
         params[idx++] = if (lut2Uploaded) filter.lutConcentration2 else 0f  // lut2Strength (0 if no LUT)
         params[idx++] = 33f                                // lutSize (default 33)
         params[idx++] = 33f                                // lut2Size (default 33)
-        params[idx++] = filter.exposure
+        params[idx++] = filter.exposure / 10f  // Convert slider value to EV stops (-5 to +5)
         params[idx++] = filter.contrast
         params[idx++] = filter.highlights
         params[idx++] = filter.shadows
@@ -206,41 +234,51 @@ class ImageProcessingEngine(
         params[idx++] = filter.colorTemperature
         params[idx++] = filter.tint
         params[idx++] = filter.vignetteStrength
-        // Grain: use highlight density as overall grain strength
-        params[idx++] = filter.grainConfig.highlightDensity  // grainStrength
-        params[idx++] = System.currentTimeMillis().toFloat() // grainSeed
-        params[idx++] = 0.33f                                // shadowThreshold
-        params[idx++] = 0.66f                                // highlightThreshold
-        params[idx++] = filter.grainConfig.shadowDensity     // shadowGrainRatio
-        params[idx++] = filter.grainConfig.midtoneDensity    // midtoneGrainRatio
-        params[idx++] = filter.grainConfig.highlightDensity  // highlightGrainRatio
-        params[idx++] = filter.grainConfig.shadowSize        // shadowSizeRatio
-        params[idx++] = filter.grainConfig.highlightSize     // highlightSizeRatio
-        params[idx++] = if (lut1Uploaded) 1f else 0f  // enableLut
-        params[idx++] = if (lut2Uploaded) 1f else 0f  // enableLut2
-        params[idx++] = if (filter.grainConfig.highlightDensity > 0f ||
-            filter.grainConfig.midtoneDensity > 0f ||
-            filter.grainConfig.shadowDensity > 0f) 1f else 0f    // enableGrain
-        return params
-    }
-
-    private fun processImageCpu(input: Mat, filter: FilterConfig): Mat {
-        logger.d(TAG, "Processing image preview")
-        var current = input.clone()
-
-        try {
-            current = lutProcessor.process(current, filter)
-            current = brightnessProcessor.process(current, filter)
-            current = colorProcessor.process(current, filter)
-            current = curveProcessor.process(current, filter)
-            current = lchProcessor.process(current, filter)
-            current = vignetteProcessor.process(current, filter)
-            current = grainProcessor.process(current, filter)
-        } catch (e: Exception) {
-            logger.e(TAG, "Error processing image preview", e)
+        // Grain: map new GrainConfig fields to GPU shader params
+        params[idx++] = filter.grainConfig.globalStrength
+        params[idx++] = System.currentTimeMillis().toFloat()
+        params[idx++] = filter.grainConfig.shadowThreshold / 255f
+        params[idx++] = filter.grainConfig.highlightThreshold / 255f
+        params[idx++] = filter.grainConfig.shadowGrainRatio
+        params[idx++] = filter.grainConfig.midtoneGrainRatio
+        params[idx++] = filter.grainConfig.highlightGrainRatio
+        params[idx++] = filter.grainConfig.shadowSizeRatio
+        params[idx++] = filter.grainConfig.highlightSizeRatio
+        params[idx++] = if (lut1Uploaded) 1f else 0f   // enableLut
+        params[idx++] = if (lut2Uploaded) 1f else 0f   // enableLut2
+        params[idx++] = if (filter.grainConfig.globalStrength > 0f) 1f else 0f  // enableGrain
+        // LCH adjustments: 8 zones * 3 = indices 24-47
+        val lchZones = listOf(
+            filter.lchConfig.red,
+            filter.lchConfig.orange,
+            filter.lchConfig.yellow,
+            filter.lchConfig.green,
+            filter.lchConfig.cyan,
+            filter.lchConfig.blue,
+            filter.lchConfig.purple,
+            filter.lchConfig.skin
+        )
+        val lchEnabled = lchZones.any { it.lightness != 0f || it.chroma != 0f || it.hue != 0f }
+        for (zone in lchZones) {
+            params[idx++] = zone.lightness
+            params[idx++] = zone.chroma
+            params[idx++] = zone.hue
         }
-
-        return current
+        // Enable flags
+        val curveEnabled = filter.curveConfig.redChannel.isNotEmpty() ||
+            filter.curveConfig.greenChannel.isNotEmpty() ||
+            filter.curveConfig.blueChannel.isNotEmpty() ||
+            filter.curveConfig.whiteChannel.isNotEmpty()
+        params[idx++] = if (lchEnabled) 1f else 0f     // enableLch
+        params[idx++] = if (curveEnabled) 1f else 0f   // enableCurve
+        // Extended grain parameters
+        params[idx++] = filter.grainConfig.midtoneSizeRatio
+        params[idx++] = filter.grainConfig.redChannelRatio
+        params[idx++] = filter.grainConfig.blueChannelRatio
+        params[idx++] = filter.grainConfig.channelCorrelation
+        params[idx++] = filter.grainConfig.colorPreservation
+        params[idx++] = filter.grainConfig.grainSize
+        return params
     }
 
     fun processImageWithUnifiedLut(input: Mat, unifiedLut: UnifiedLut): Mat {
@@ -274,10 +312,6 @@ class ImageProcessingEngine(
                     var color = floatArrayOf(rNorm, gNorm, bNorm)
 
                     color = lutProcessor.applyLutToColor(color, filter)
-                    color = brightnessProcessor.applyToColor(color, filter)
-                    color = colorProcessor.applyToColor(color, filter)
-                    color = curveProcessor.applyToColor(color, filter)
-                    color = lchProcessor.applyToColor(color, filter)
 
                     val idx = (b * size * size + g * size + r) * 3
                     data[idx] = color[0].coerceIn(0f, 1f)

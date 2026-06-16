@@ -14,7 +14,7 @@
 #include <string>
 
 // Must match the shader's uniform block layout exactly.
-// Total: 28 * 4 = 112 bytes, std140 aligned.
+// Total: 26 original + 24 LCH + 2 enable + 6 grain extra = 58 fields * 4 = 232 bytes.
 struct FilterParams {
     float lutStrength;         // 0
     float lut2Strength;        // 1
@@ -42,8 +42,24 @@ struct FilterParams {
     int   enableGrain;         // 23
     int   width;               // 24
     int   height;              // 25
-    float _pad0;               // 26
-    float _pad1;               // 27
+    // LCH adjustments: 8 zones x 3 (lightness, chroma, hue)
+    float lchRed_L, lchRed_C, lchRed_H;
+    float lchOrange_L, lchOrange_C, lchOrange_H;
+    float lchYellow_L, lchYellow_C, lchYellow_H;
+    float lchGreen_L, lchGreen_C, lchGreen_H;
+    float lchCyan_L, lchCyan_C, lchCyan_H;
+    float lchBlue_L, lchBlue_C, lchBlue_H;
+    float lchPurple_L, lchPurple_C, lchPurple_H;
+    float lchSkin_L, lchSkin_C, lchSkin_H;
+    int   enableLch;
+    int   enableCurve;
+    // Extended grain parameters
+    float midtoneSizeRatio;
+    float redChannelRatio;
+    float blueChannelRatio;
+    float channelCorrelation;
+    float colorPreservation;
+    float grainSize;
 };
 
 class VulkanEngine {
@@ -53,6 +69,9 @@ public:
     bool isAvailable() const;
 
     void uploadLut(const float* lutData, uint32_t lutSize, int slot);
+
+    // Upload 1024 floats of curve data (R:0-255, G:256-511, B:512-767, W:768-1023)
+    void uploadCurves(const float* curveData);
 
     // Process RGBA8 image in-place. rgbaData must be width*height*4 bytes.
     // The buffer is read, uploaded to GPU, processed, and result written back
@@ -76,6 +95,9 @@ private:
 
     // UBO for FilterParams
     VulkanBuffer m_uboBuffer;
+
+    // SSBO for curve data (1024 floats = 4096 bytes)
+    VulkanBuffer m_curveBuffer;
 
     // Single unified pipeline
     VulkanPipeline m_pipeline;
