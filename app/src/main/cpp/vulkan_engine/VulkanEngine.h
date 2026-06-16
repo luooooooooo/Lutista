@@ -60,6 +60,7 @@ struct FilterParams {
     float channelCorrelation;
     float colorPreservation;
     float grainSize;
+    float lutGlobalStrength;
 };
 
 class VulkanEngine {

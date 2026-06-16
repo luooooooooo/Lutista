@@ -1,7 +1,12 @@
 package cn.alittlecookie.lut2photo_n.util
 
 import cn.alittlecookie.lut2photo_n.data.database.entity.FilterEntity
-import cn.alittlecookie.lut2photo_n.data.model.*
+import cn.alittlecookie.lut2photo_n.data.model.CurveConfig
+import cn.alittlecookie.lut2photo_n.data.model.FilterConfig
+import cn.alittlecookie.lut2photo_n.data.model.FloatPoint
+import cn.alittlecookie.lut2photo_n.data.model.GrainConfig
+import cn.alittlecookie.lut2photo_n.data.model.LchAdjustment
+import cn.alittlecookie.lut2photo_n.data.model.LchConfig
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -160,6 +165,7 @@ object FilterConfigJson {
             lutConcentration1 = this.lutConcentration1,
             lutPath2 = this.lutPath2,
             lutConcentration2 = this.lutConcentration2,
+            lutGlobalStrength = this.lutGlobalStrength,
             lutPrecision = this.lutPrecision,
             exposure = this.exposure,
             contrast = this.contrast,
@@ -190,6 +196,7 @@ object FilterConfigJson {
             lutConcentration1 = this.lutConcentration1,
             lutPath2 = this.lutPath2,
             lutConcentration2 = this.lutConcentration2,
+            lutGlobalStrength = this.lutGlobalStrength,
             lutPrecision = this.lutPrecision,
             exposure = this.exposure,
             contrast = this.contrast,

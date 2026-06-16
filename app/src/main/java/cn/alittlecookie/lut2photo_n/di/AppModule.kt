@@ -39,7 +39,7 @@ val appModule = module {
             androidContext(),
             AppDatabase::class.java,
             "lut2photo.db"
-        ).addMigrations(AppDatabase.MIGRATION_1_2).build()
+        ).addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3).build()
     }
 
     // DAOs

@@ -13,6 +13,7 @@ data class FilterEntity(
     val lutConcentration1: Float = 1.0f,
     val lutPath2: String? = null,
     val lutConcentration2: Float = 1.0f,
+    val lutGlobalStrength: Float = 1.0f,
     val lutPrecision: Int = 33,
     // 亮度配置
     val exposure: Float = 0f,

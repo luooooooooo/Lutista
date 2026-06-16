@@ -173,6 +173,7 @@ static jbyteArray nativeProcessImage(JNIEnv* env, jobject thiz, jlong handle,
     fp.channelCorrelation  = paramArr[idx++];
     fp.colorPreservation   = paramArr[idx++];
     fp.grainSize           = paramArr[idx++];
+    fp.lutGlobalStrength   = paramArr[idx++];
 
     bool success = engine->processImage(reinterpret_cast<uint8_t*>(data),
                                          static_cast<uint32_t>(width),

@@ -569,8 +569,8 @@ private fun LutTabContent(
     onPickLut2: () -> Unit
 ) {
     // 全局浓度滑块本地状态
-    var globalStrength by remember(config.lutConcentration1) {
-        mutableFloatStateOf(config.lutConcentration1 * 100f)
+    var globalStrength by remember(config.lutGlobalStrength) {
+        mutableFloatStateOf(config.lutGlobalStrength * 100f)
     }
     var lut1Strength by remember(config.lutConcentration1) {
         mutableFloatStateOf(config.lutConcentration1 * 100f)
@@ -588,7 +588,7 @@ private fun LutTabContent(
                 value = globalStrength,
                 onValueChange = { globalStrength = it },
                 onValueChangeFinished = {
-                    onConfigChange { it.copy(lutConcentration1 = globalStrength / 100f) }
+                    onConfigChange { it.copy(lutGlobalStrength = globalStrength / 100f) }
                 },
                 valueRange = 0f..100f,
                 valueFormatter = { "%.0f%%".format(it) }

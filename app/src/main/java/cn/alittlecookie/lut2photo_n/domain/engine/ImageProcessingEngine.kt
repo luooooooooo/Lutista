@@ -220,7 +220,7 @@ class ImageProcessingEngine(
     private fun buildGpuParams(filter: FilterConfig): FloatArray {
         // FilterParams: 56 floats in paramArr (width/height from JNI function args)
         // Layout: 12 base + 9 grain + 3 enable + 24 LCH + 2 enable + 6 extended grain
-        val params = FloatArray(56)
+        val params = FloatArray(57)
         var idx = 0
         params[idx++] = if (lut1Uploaded) filter.lutConcentration1 else 0f  // lutStrength (0 if no LUT)
         params[idx++] = if (lut2Uploaded) filter.lutConcentration2 else 0f  // lut2Strength (0 if no LUT)
@@ -236,7 +236,7 @@ class ImageProcessingEngine(
         params[idx++] = filter.vignetteStrength
         // Grain: map new GrainConfig fields to GPU shader params
         params[idx++] = filter.grainConfig.globalStrength
-        params[idx++] = System.currentTimeMillis().toFloat()
+        params[idx++] = (System.currentTimeMillis() % 1000).toFloat() / 1000f
         params[idx++] = filter.grainConfig.shadowThreshold / 255f
         params[idx++] = filter.grainConfig.highlightThreshold / 255f
         params[idx++] = filter.grainConfig.shadowGrainRatio
@@ -278,6 +278,7 @@ class ImageProcessingEngine(
         params[idx++] = filter.grainConfig.channelCorrelation
         params[idx++] = filter.grainConfig.colorPreservation
         params[idx++] = filter.grainConfig.grainSize
+        params[idx++] = filter.lutGlobalStrength
         return params
     }
 

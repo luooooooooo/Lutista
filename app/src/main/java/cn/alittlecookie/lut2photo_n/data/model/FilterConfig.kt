@@ -8,6 +8,7 @@ data class FilterConfig(
     val lutConcentration1: Float = 1.0f,
     val lutPath2: String? = null,
     val lutConcentration2: Float = 1.0f,
+    val lutGlobalStrength: Float = 1.0f,
     val lutPrecision: Int = 33,
     // 亮度配置
     val exposure: Float = 0f,
@@ -70,7 +71,7 @@ data class GrainConfig(
     // 影调分区颗粒强度（以中间调为基准 1.0）
     val shadowGrainRatio: Float = 0.6f,
     val midtoneGrainRatio: Float = 1.0f,
-    val highlightGrainRatio: Float = 0.3f,
+    val highlightGrainRatio: Float = 0.5f,
     // 影调分区尺寸系数（以中间调为基准 1.0）
     val shadowSizeRatio: Float = 1.5f,
     val midtoneSizeRatio: Float = 1.0f,

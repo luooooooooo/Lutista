@@ -50,6 +50,7 @@ layout(set = 0, binding = 4) uniform FilterParams {
     float channelCorrelation;
     float colorPreservation;
     float grainSize;
+    float lutGlobalStrength;
 } params;
 
 layout(std430, set = 0, binding = 5) readonly buffer CurveData {
@@ -123,6 +124,7 @@ void main() {
 
     vec4 color = imageLoad(inputImage, coord);
     vec3 c = color.rgb;
+    vec3 preLut = c;
 
     // 1. LUT1
     if (params.enableLut == 1 && params.lutStrength > 0.0) {
@@ -138,6 +140,11 @@ void main() {
         vec3 lutCoord = (scaled + 0.5) / params.lut2Size;
         vec3 lut2Color = texture(lut2Texture, clamp(lutCoord, 0.0, 1.0)).rgb;
         c = mix(c, lut2Color, params.lut2Strength);
+    }
+
+    // Global LUT strength: blend between original and LUT-processed
+    if ((params.enableLut == 1 || params.enableLut2 == 1) && params.lutGlobalStrength < 1.0) {
+        c = mix(preLut, c, params.lutGlobalStrength);
     }
 
     // 3. Brightness: exposure
@@ -248,8 +255,9 @@ void main() {
                                             params.shadowGrainRatio, params.midtoneGrainRatio, params.highlightGrainRatio);
         float sizeRatio = getGrainRatio(lum, params.shadowThreshold, params.highlightThreshold,
                                         params.shadowSizeRatio, params.midtoneSizeRatio, params.highlightSizeRatio);
-        float noiseStrength = params.grainStrength * strengthRatio * sizeRatio * 0.005;
-        vec2 grainUV = vec2(coord) / (params.grainSize * sizeRatio * 500.0);
+        float noiseStrength = params.grainStrength * strengthRatio * params.grainSize * sizeRatio * 0.1;
+        float referenceResolution = 1000.0;
+        vec2 grainUV = vec2(coord) / (params.grainSize * sizeRatio * referenceResolution);
         float baseNoise = gaussianNoise(grainUV, params.grainSeed);
         float redNoise = mix(gaussianNoise(grainUV, params.grainSeed + 0.1), baseNoise, params.channelCorrelation);
         float greenNoise = mix(gaussianNoise(grainUV, params.grainSeed + 0.2), baseNoise, params.channelCorrelation);

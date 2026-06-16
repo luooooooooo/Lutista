@@ -17,7 +17,7 @@ import cn.alittlecookie.lut2photo_n.data.database.entity.WatermarkEntity
         WatermarkEntity::class,
         TaskEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -30,6 +30,12 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE filters ADD COLUMN isBuiltIn INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("ALTER TABLE filters ADD COLUMN filterDirPath TEXT DEFAULT NULL")
+            }
+        }
+
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE filters ADD COLUMN lutGlobalStrength REAL NOT NULL DEFAULT 1.0")
             }
         }
     }
