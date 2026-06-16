@@ -25,7 +25,9 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
-import java.util.UUID
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class FilterEditorViewModel(
     private val filterId: Long,  // 0 = 新建, >0 = 编辑已有
@@ -334,7 +336,17 @@ class FilterEditorViewModel(
                 val lutDir = File(context.filesDir, LUT_DIR_NAME)
                 if (!lutDir.exists()) lutDir.mkdirs()
 
-                val fileName = "lut_${UUID.randomUUID()}.cube"
+                val originalName = getFileName(uri).substringBeforeLast('.')
+                val dateFormat = SimpleDateFormat("yyMM", Locale.getDefault())
+                val prefix = dateFormat.format(Date())
+                val existingFiles = lutDir.listFiles()?.mapNotNull { it.name } ?: emptyList()
+                val ext = "cube"
+                val pattern = Regex("^\\Q$originalName\\E-\\Q$prefix\\E(\\d{3})\\.$ext$")
+                val maxNum = existingFiles
+                    .mapNotNull { pattern.find(it)?.groupValues?.get(1)?.toIntOrNull() }
+                    .maxOrNull() ?: 0
+                val nextNum = (maxNum + 1).toString().padStart(3, '0')
+                val fileName = "$originalName-$prefix$nextNum.$ext"
                 val destFile = File(lutDir, fileName)
 
                 context.contentResolver.openInputStream(uri)?.use { input ->
@@ -432,5 +444,16 @@ class FilterEditorViewModel(
             sampleSize *= 2
         }
         return sampleSize
+    }
+
+    private fun getFileName(uri: Uri): String {
+        var name = "unknown"
+        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+            if (cursor.moveToFirst() && nameIndex >= 0) {
+                name = cursor.getString(nameIndex)
+            }
+        }
+        return name
     }
 }

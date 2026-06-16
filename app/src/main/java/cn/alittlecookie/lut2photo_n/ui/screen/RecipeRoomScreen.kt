@@ -5,6 +5,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -12,6 +14,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -32,20 +35,26 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import cn.alittlecookie.lut2photo_n.data.database.entity.FilterEntity
 import cn.alittlecookie.lut2photo_n.data.repository.FilterRepository
 import cn.alittlecookie.lut2photo_n.domain.usecase.ExportFilterUseCase
 import cn.alittlecookie.lut2photo_n.domain.usecase.ImportLutUseCase
 import cn.alittlecookie.lut2photo_n.manager.BuiltinFilterManager
 import cn.alittlecookie.lut2photo_n.manager.LogManager
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import org.koin.compose.koinInject
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
+import top.yukonga.miuix.kmp.basic.Button
+import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.DropdownDefaults
 import top.yukonga.miuix.kmp.basic.DropdownImpl
@@ -56,6 +65,7 @@ import top.yukonga.miuix.kmp.basic.PopupPositionProvider
 import top.yukonga.miuix.kmp.basic.ScrollBehavior
 import top.yukonga.miuix.kmp.basic.TabRowWithContour
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Create
 import top.yukonga.miuix.kmp.icon.extended.Import
@@ -108,6 +118,10 @@ fun RecipeRoomScreen(
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = RecipeTab.entries.map { it.label }
 
+    // Rename dialog state
+    var renameItem by remember { mutableStateOf<RecipeItem?>(null) }
+    var renameText by remember { mutableStateOf("") }
+
     val filtersFromDb by filterRepository.getAllFilters().collectAsState(initial = emptyList())
 
     val filters = remember(filtersFromDb) {
@@ -146,6 +160,49 @@ fun RecipeRoomScreen(
     LaunchedEffect(importTrigger) {
         if (importTrigger > 0) {
             importPicker.launch(arrayOf("*/*"))
+        }
+    }
+
+    // SAF export state
+    data class PendingExport(val filterId: Long, val type: ExportFilterUseCase.ExportType)
+    var pendingExport by remember { mutableStateOf<PendingExport?>(null) }
+
+    val exportLutLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) { uri ->
+        val pending = pendingExport ?: return@rememberLauncherForActivityResult
+        pendingExport = null
+        if (uri != null) {
+            scope.launch {
+                when (val result = exportFilterUseCase.exportUnifiedLutTo(pending.filterId, uri)) {
+                    is ExportFilterUseCase.ExportResult.Success -> {
+                        Toast.makeText(context, "已导出统一LUT", Toast.LENGTH_SHORT).show()
+                    }
+                    is ExportFilterUseCase.ExportResult.Error -> {
+                        Toast.makeText(context, result.message, Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+    }
+
+    val exportConfigLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri ->
+        val pending = pendingExport ?: return@rememberLauncherForActivityResult
+        pendingExport = null
+        if (uri != null) {
+            scope.launch {
+                val result = exportFilterUseCase.exportFilterConfigTo(pending.filterId, uri)
+                when (result) {
+                    is ExportFilterUseCase.ExportResult.Success -> {
+                        Toast.makeText(context, "已导出滤镜配置", Toast.LENGTH_SHORT).show()
+                    }
+                    is ExportFilterUseCase.ExportResult.Error -> {
+                        Toast.makeText(context, result.message, Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
         }
     }
 
@@ -196,7 +253,10 @@ fun RecipeRoomScreen(
                             }
                         }
                     }
-                    MoreAction.RENAME -> {}
+                    MoreAction.RENAME -> {
+                        renameItem = item
+                        renameText = item.name
+                    }
                     MoreAction.COPY -> {
                         scope.launch {
                             val filterEntity = filterRepository.getFilterById(item.id)
@@ -204,7 +264,18 @@ fun RecipeRoomScreen(
                                 if (filterEntity.isBuiltIn) {
                                     builtinFilterManager.copyBuiltinFilter(item.id)
                                 } else {
-                                    val newName = "${item.name}-拷贝${System.currentTimeMillis()}"
+                                    val baseName = item.name
+                                    val allFilters = filterRepository.getAllFilters().first()
+                                    val copyNum = allFilters
+                                        .mapNotNull { e ->
+                                            val prefix = "${baseName}-拷贝"
+                                            if (e.name.startsWith(prefix))
+                                                e.name.removePrefix(prefix).toIntOrNull()
+                                            else null
+                                        }
+                                        .maxOrNull()
+                                        ?.plus(1) ?: 1
+                                    val newName = "${baseName}-拷贝$copyNum"
                                     val newEntity = filterEntity.copy(
                                         id = 0,
                                         name = newName,
@@ -218,14 +289,12 @@ fun RecipeRoomScreen(
                         }
                     }
                     MoreAction.EXPORT_LUT -> {
-                        scope.launch {
-                            exportFilterUseCase.exportUnifiedLut(item.id)
-                        }
+                        pendingExport = PendingExport(item.id, ExportFilterUseCase.ExportType.UNIFIED_LUT)
+                        exportLutLauncher.launch("${item.name}_unified.cube")
                     }
                     MoreAction.EXPORT_CONFIG -> {
-                        scope.launch {
-                            exportFilterUseCase.exportFilterConfig(item.id)
-                        }
+                        pendingExport = PendingExport(item.id, ExportFilterUseCase.ExportType.FILTER_CONFIG)
+                        exportConfigLauncher.launch("${item.name}_config.zip")
                     }
                     MoreAction.DELETE -> {
                         if (!item.isBuiltIn) {
@@ -245,6 +314,25 @@ fun RecipeRoomScreen(
                         Modifier
                     }
                 )
+        )
+    }
+
+    // Rename dialog
+    val renameTarget = renameItem
+    if (renameTarget != null) {
+        RenameDialog(
+            currentName = renameText,
+            onNameChange = { renameText = it },
+            onConfirm = {
+                scope.launch {
+                    val entity = filterRepository.getFilterById(renameTarget.id)
+                    if (entity != null) {
+                        filterRepository.update(entity.copy(name = renameText.trim()))
+                    }
+                    renameItem = null
+                }
+            },
+            onDismiss = { renameItem = null }
         )
     }
 }
@@ -444,6 +532,7 @@ private fun RecipeList(
     }
 }
 
+
 @Composable
 private fun RecipeListItem(
     item: RecipeItem,
@@ -609,5 +698,75 @@ fun RecipeRoomTopBar(
             contentDescription = "导入",
             tint = MiuixTheme.colorScheme.onSurface
         )
+    }
+}
+
+@Composable
+fun RenameDialog(
+    currentName: String,
+    onNameChange: (String) -> Unit,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.5f))
+            .clickable(onClick = onDismiss),
+        contentAlignment = Alignment.Center
+    ) {
+        Card(
+            modifier = Modifier
+                .width(300.dp)
+                .clickable(enabled = false, onClick = {}),
+            cornerRadius = 24.dp
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "重命名滤镜",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MiuixTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                TextField(
+                    value = currentName,
+                    onValueChange = onNameChange,
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Button(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            color = MiuixTheme.colorScheme.surfaceVariant
+                        )
+                    ) {
+                        Text("取消", color = MiuixTheme.colorScheme.onSurface)
+                    }
+                    Button(
+                        onClick = onConfirm,
+                        modifier = Modifier.weight(1f),
+                        enabled = currentName.trim().isNotEmpty(),
+                        colors = ButtonDefaults.buttonColors(
+                            color = MiuixTheme.colorScheme.primary
+                        )
+                    ) {
+                        Text("确定", color = Color.White)
+                    }
+                }
+            }
+        }
     }
 }

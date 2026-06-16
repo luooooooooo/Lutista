@@ -10,6 +10,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class ImportLutUseCase(
     private val context: Context,
@@ -44,14 +47,16 @@ class ImportLutUseCase(
             val lutsDir = File(context.filesDir, "luts")
             lutsDir.mkdirs()
 
-            val filterName = fileName.substringBeforeLast('.')
+            val originalName = fileName.substringBeforeLast('.')
+            val destFile = generateLutFile(lutsDir, originalName, fileExt)
+
+            val filterName = originalName
             val existingFilter = filterRepository.getFilterByName(filterName)
 
             if (existingFilter != null && duplicateAction == DuplicateAction.ASK) {
                 return@withContext ImportResult.DuplicateExists(filterName)
             }
 
-            val destFile = File(lutsDir, fileName)
             context.contentResolver.openInputStream(uri)?.use { input ->
                 FileOutputStream(destFile).use { output ->
                     input.copyTo(output)
@@ -106,5 +111,17 @@ class ImportLutUseCase(
             }
         }
         return name
+    }
+
+    private fun generateLutFile(lutsDir: File, originalName: String, ext: String): File {
+        val dateFormat = SimpleDateFormat("yyMM", Locale.getDefault())
+        val prefix = dateFormat.format(Date())
+        val existingFiles = lutsDir.listFiles()?.mapNotNull { it.name } ?: emptyList()
+        val pattern = Regex("^\\Q$originalName\\E-\\Q$prefix\\E(\\d{3})\\.\\Q$ext\\E$")
+        val maxNum = existingFiles
+            .mapNotNull { pattern.find(it)?.groupValues?.get(1)?.toIntOrNull() }
+            .maxOrNull() ?: 0
+        val nextNum = (maxNum + 1).toString().padStart(3, '0')
+        return File(lutsDir, "$originalName-$prefix$nextNum.$ext")
     }
 }

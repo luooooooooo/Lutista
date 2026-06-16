@@ -62,9 +62,13 @@ import org.koin.compose.koinInject
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.DropdownDefaults
+import top.yukonga.miuix.kmp.basic.DropdownImpl
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
+import top.yukonga.miuix.kmp.basic.ListPopupColumn
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
+import top.yukonga.miuix.kmp.basic.PopupPositionProvider
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Slider
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
@@ -74,6 +78,7 @@ import top.yukonga.miuix.kmp.basic.rememberTopAppBarState
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.icon.extended.More
+import top.yukonga.miuix.kmp.overlay.OverlayListPopup
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 // ── Tab 枚举 ────────────────────────────────────────────────────────
@@ -151,6 +156,8 @@ fun FilterEditorScreen(
     var selectedTabIndex by remember { mutableIntStateOf(0) }
     var showBackDialog by remember { mutableStateOf(false) }
     var showMoreMenu by remember { mutableStateOf(false) }
+    var renameDialogVisible by remember { mutableStateOf(false) }
+    var renameDialogText by remember { mutableStateOf("") }
     var filterNameEditing by remember { mutableStateOf("") }
     var isEditingName by remember { mutableStateOf(false) }
 
@@ -232,12 +239,34 @@ fun FilterEditorScreen(
                             }
                         )
                     }
-                    // 更多菜单（后续扩展）
-                    IconButton(onClick = { showMoreMenu = !showMoreMenu }) {
-                        Icon(
-                            imageVector = MiuixIcons.More,
-                            contentDescription = "更多"
-                        )
+                    // 更多菜单
+                    Box {
+                        IconButton(onClick = { showMoreMenu = !showMoreMenu }) {
+                            Icon(
+                                imageVector = MiuixIcons.More,
+                                contentDescription = "更多"
+                            )
+                        }
+                        OverlayListPopup(
+                            show = showMoreMenu,
+                            onDismissRequest = { showMoreMenu = false },
+                            alignment = PopupPositionProvider.Align.End
+                        ) {
+                            ListPopupColumn {
+                                DropdownImpl(
+                                    text = "重命名",
+                                    optionSize = 1,
+                                    isSelected = false,
+                                    index = 0,
+                                    dropdownColors = DropdownDefaults.dropdownColors(),
+                                    onSelectedIndexChange = {
+                                        showMoreMenu = false
+                                        renameDialogVisible = true
+                                        renameDialogText = state.filterName
+                                    }
+                                )
+                            }
+                        }
                     }
                 }
             )
@@ -316,6 +345,22 @@ fun FilterEditorScreen(
                 }
             }
         }
+    }
+
+    // 重命名对话框
+    if (renameDialogVisible) {
+        RenameDialog(
+            currentName = renameDialogText,
+            onNameChange = { renameDialogText = it },
+            onConfirm = {
+                val trimmed = renameDialogText.trim()
+                if (trimmed.isNotEmpty()) {
+                    state.updateName(trimmed)
+                }
+                renameDialogVisible = false
+            },
+            onDismiss = { renameDialogVisible = false }
+        )
     }
 
     // 保存确认对话框（在 Scaffold 之后，覆盖在最上层）
