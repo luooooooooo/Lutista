@@ -4,6 +4,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -34,6 +36,7 @@ fun MainTabScreen(
     var selectedPage by rememberSaveable { mutableIntStateOf(initialPage) }
     val pages = MainPage.entries
     val scrollBehavior = MiuixScrollBehavior(rememberTopAppBarState())
+    var recipeImportTrigger by remember { mutableLongStateOf(0L) }
 
     Scaffold(
         topBar = {
@@ -44,9 +47,7 @@ fun MainTabScreen(
                 actions = {
                     if (selectedPage == 1) {
                         RecipeRoomTopBar(
-                            onImportClick = {
-                                // TODO: 打开 SAF 文件选择器
-                            }
+                            onImportClick = { recipeImportTrigger++ }
                         )
                     }
                 }
@@ -75,7 +76,8 @@ fun MainTabScreen(
             1 -> RecipeRoomScreen(
                 modifier = Modifier.padding(top = paddingValues.calculateTopPadding()),
                 scrollBehavior = scrollBehavior,
-                onEditFilter = onEditFilter
+                onEditFilter = onEditFilter,
+                importTrigger = recipeImportTrigger
             )
             2 -> SettingsScreen(
                 modifier = Modifier.padding(top = paddingValues.calculateTopPadding()),

@@ -150,7 +150,19 @@ class BuiltinFilterManager(
         val filter = filterRepository.getFilterById(filterId) ?: return null
         if (!filter.isBuiltIn) return null
 
-        val newName = "${filter.name}_copy_${System.currentTimeMillis()}"
+        val baseName = filter.name
+        val allFilters = filterRepository.getAllFilters().first()
+        val copyNum = allFilters
+            .mapNotNull { e ->
+                val prefix = "${baseName}-拷贝"
+                if (e.name.startsWith(prefix))
+                    e.name.removePrefix(prefix).toIntOrNull()
+                else null
+            }
+            .maxOrNull()
+            ?.plus(1) ?: 1
+        val newName = "${baseName}-拷贝$copyNum"
+
         val filtersBaseDir = File(context.filesDir, FILTERS_DIR)
         val newDir = File(filtersBaseDir, newName)
         newDir.mkdirs()

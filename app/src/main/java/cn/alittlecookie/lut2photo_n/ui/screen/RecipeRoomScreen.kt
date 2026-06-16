@@ -1,5 +1,8 @@
 package cn.alittlecookie.lut2photo_n.ui.screen
 
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -17,6 +20,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -29,11 +33,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import cn.alittlecookie.lut2photo_n.data.database.entity.FilterEntity
 import cn.alittlecookie.lut2photo_n.data.repository.FilterRepository
 import cn.alittlecookie.lut2photo_n.domain.usecase.ExportFilterUseCase
+import cn.alittlecookie.lut2photo_n.domain.usecase.ImportLutUseCase
 import cn.alittlecookie.lut2photo_n.manager.BuiltinFilterManager
+import cn.alittlecookie.lut2photo_n.manager.LogManager
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 import org.koin.compose.koinInject
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
@@ -55,6 +64,9 @@ import top.yukonga.miuix.kmp.icon.extended.Sort
 import top.yukonga.miuix.kmp.overlay.OverlayListPopup
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
+import java.io.File
+import java.io.FileOutputStream
+import java.util.zip.ZipInputStream
 
 enum class RecipeTab(val label: String) {
     FILTER("滤镜"),
@@ -82,11 +94,15 @@ enum class MoreAction {
 fun RecipeRoomScreen(
     modifier: Modifier = Modifier,
     scrollBehavior: ScrollBehavior? = null,
-    onEditFilter: (Long) -> Unit = {}
+    onEditFilter: (Long) -> Unit = {},
+    importTrigger: Long = 0L
 ) {
+    val context = LocalContext.current
     val filterRepository: FilterRepository = koinInject()
     val builtinFilterManager: BuiltinFilterManager = koinInject()
     val exportFilterUseCase: ExportFilterUseCase = koinInject()
+    val importLutUseCase: ImportLutUseCase = koinInject()
+    val logger: LogManager = koinInject()
     val scope = rememberCoroutineScope()
 
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -120,6 +136,19 @@ fun RecipeRoomScreen(
     val currentList = if (selectedTab == 0) filters else watermarks
     val isWatermarkTab = selectedTab == 1
 
+    // SAF file picker for import
+    val importPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let { handleImport(it, context, scope, importLutUseCase, filterRepository, logger) }
+    }
+
+    LaunchedEffect(importTrigger) {
+        if (importTrigger > 0) {
+            importPicker.launch(arrayOf("*/*"))
+        }
+    }
+
     Column(
         modifier = modifier.fillMaxSize()
     ) {
@@ -142,7 +171,19 @@ fun RecipeRoomScreen(
                     watermarks.add(to.index, item)
                 }
             },
-            onEditClick = { item -> onEditFilter(item.id) },
+            onEditClick = { item ->
+                if (item.isBuiltIn) {
+                    scope.launch {
+                        val copy = builtinFilterManager.copyBuiltinFilter(item.id)
+                        if (copy != null) {
+                            Toast.makeText(context, "已创建\"${copy.name}\"滤镜", Toast.LENGTH_SHORT).show()
+                            onEditFilter(copy.id)
+                        }
+                    }
+                } else {
+                    onEditFilter(item.id)
+                }
+            },
             onMoreAction = { item, action ->
                 when (action) {
                     MoreAction.TOGGLE_ENABLE -> {
@@ -163,7 +204,7 @@ fun RecipeRoomScreen(
                                 if (filterEntity.isBuiltIn) {
                                     builtinFilterManager.copyBuiltinFilter(item.id)
                                 } else {
-                                    val newName = "${item.name}_copy_${System.currentTimeMillis()}"
+                                    val newName = "${item.name}-拷贝${System.currentTimeMillis()}"
                                     val newEntity = filterEntity.copy(
                                         id = 0,
                                         name = newName,
@@ -205,6 +246,162 @@ fun RecipeRoomScreen(
                     }
                 )
         )
+    }
+}
+
+private fun handleImport(
+    uri: android.net.Uri,
+    context: android.content.Context,
+    scope: kotlinx.coroutines.CoroutineScope,
+    importLutUseCase: ImportLutUseCase,
+    filterRepository: FilterRepository,
+    logger: LogManager
+) {
+    val fileName = uri.lastPathSegment ?: "unknown"
+    when (val ext = fileName.substringAfterLast('.').lowercase()) {
+        "cube", "vlt" -> {
+            scope.launch {
+                when (val result = importLutUseCase(uri, ImportLutUseCase.DuplicateAction.RENAME)) {
+                    is ImportLutUseCase.ImportResult.Success -> {
+                        Toast.makeText(context, "已导入: ${result.filterName}", Toast.LENGTH_SHORT).show()
+                    }
+                    is ImportLutUseCase.ImportResult.Error -> {
+                        Toast.makeText(context, result.message, Toast.LENGTH_SHORT).show()
+                    }
+                    is ImportLutUseCase.ImportResult.DuplicateExists -> {
+                        Toast.makeText(context, "滤镜 \"${result.filterName}\" 已存在", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+        "zip" -> {
+            scope.launch {
+                try {
+                    val content = context.contentResolver.openInputStream(uri) ?: return@launch
+                    val zis = ZipInputStream(content)
+                    var hasCubeOrVlt = false
+                    var hasConfigJson = false
+                    var configName: String? = null
+                    var entry = zis.nextEntry
+                    while (entry != null) {
+                        val entryName = entry.name.lowercase()
+                        if (entryName.endsWith(".cube") || entryName.endsWith(".vlt")) {
+                            hasCubeOrVlt = true
+                        }
+                        if (entryName.endsWith(".json")) {
+                            hasConfigJson = true
+                            try {
+                                val bytes = zis.readBytes()
+                                val json = JSONObject(String(bytes))
+                                configName = json.optString("name", null)
+                            } catch (_: Exception) {}
+                        }
+                        zis.closeEntry()
+                        entry = zis.nextEntry
+                    }
+                    zis.close()
+                    content.close()
+
+                    if (hasCubeOrVlt && hasConfigJson) {
+                        // Filter package
+                        importFilterPackage(context, uri, filterRepository, logger)
+                    } else {
+                        // Placeholder: watermark package
+                        Toast.makeText(context, "边框水印导入暂未实现", Toast.LENGTH_SHORT).show()
+                    }
+                } catch (e: Exception) {
+                    logger.e("Import", "导入压缩包失败", e)
+                    Toast.makeText(context, "导入失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+        else -> {
+            Toast.makeText(context, "不支持的文件格式: $ext", Toast.LENGTH_SHORT).show()
+        }
+    }
+}
+
+private suspend fun importFilterPackage(
+    context: android.content.Context,
+    uri: android.net.Uri,
+    filterRepository: FilterRepository,
+    logger: LogManager
+) {
+    try {
+        val content = context.contentResolver.openInputStream(uri) ?: return
+        val zis = ZipInputStream(content)
+        val filterDir = File(context.filesDir, "filters")
+        filterDir.mkdirs()
+
+        var configJson: JSONObject? = null
+        var lut1Path: String? = null
+        var lut2Path: String? = null
+        var filterName = "导入滤镜"
+
+        var entry = zis.nextEntry
+        while (entry != null) {
+            val rawName = entry.name.substringAfterLast('/')
+            if (rawName.isEmpty()) { zis.closeEntry(); entry = zis.nextEntry; continue }
+
+            val bytes = zis.readBytes()
+
+            if (rawName.endsWith(".json", ignoreCase = true)) {
+                try {
+                    configJson = JSONObject(String(bytes))
+                    filterName = configJson.optString("name", filterName)
+                } catch (_: Exception) {}
+            } else if (rawName.endsWith(".cube", ignoreCase = true) || rawName.endsWith(".vlt", ignoreCase = true)) {
+                val subDir = File(filterDir, "import_${System.currentTimeMillis()}")
+                subDir.mkdirs()
+                val destFile = File(subDir, rawName)
+                FileOutputStream(destFile).use { it.write(bytes) }
+
+                if (rawName.contains("1", ignoreCase = true) || lut1Path == null) {
+                    lut1Path = destFile.absolutePath
+                } else {
+                    lut2Path = destFile.absolutePath
+                }
+            }
+
+            zis.closeEntry()
+            entry = zis.nextEntry
+        }
+        zis.close()
+        content.close()
+
+        if (configJson != null) {
+            val json = configJson
+            val entity = FilterEntity(
+                name = filterName,
+                lutPath1 = lut1Path,
+                lutConcentration1 = json.optDouble("lutConcentration1", 1.0).toFloat(),
+                lutPath2 = lut2Path,
+                lutConcentration2 = json.optDouble("lutConcentration2", 1.0).toFloat(),
+                lutPrecision = json.optInt("lutPrecision", 33),
+                exposure = json.optDouble("exposure", 0.0).toFloat(),
+                contrast = json.optDouble("contrast", 0.0).toFloat(),
+                highlights = json.optDouble("highlights", 0.0).toFloat(),
+                shadows = json.optDouble("shadows", 0.0).toFloat(),
+                saturation = json.optDouble("saturation", 0.0).toFloat(),
+                colorTemperature = json.optDouble("colorTemperature", 0.0).toFloat(),
+                tint = json.optDouble("tint", 0.0).toFloat(),
+                curveJson = json.optString("curveJson", "{}"),
+                lchJson = json.optString("lchJson", "{}"),
+                vignetteStrength = json.optDouble("vignetteStrength", 0.0).toFloat(),
+                grainJson = json.optString("grainJson", "{}"),
+                isBuiltIn = false,
+                createdAt = System.currentTimeMillis(),
+                updatedAt = System.currentTimeMillis()
+            )
+            filterRepository.insert(entity)
+            Toast.makeText(context, "已导入滤镜: $filterName", Toast.LENGTH_SHORT).show()
+            logger.i("Import", "滤镜包导入成功: $filterName")
+        } else {
+            Toast.makeText(context, "压缩包中未找到配置文件", Toast.LENGTH_SHORT).show()
+        }
+    } catch (e: Exception) {
+        logger.e("Import", "导入滤镜包失败", e)
+        Toast.makeText(context, "导入失败: ${e.message}", Toast.LENGTH_SHORT).show()
     }
 }
 

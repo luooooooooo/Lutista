@@ -523,7 +523,9 @@ private fun SliderWithValue(
             .padding(horizontal = 16.dp, vertical = 6.dp)
     ) {
         Row(
-            Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 8.dp, end = 8.dp, top = 0.dp, bottom = 4.dp),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
@@ -604,16 +606,18 @@ private fun LutTabContent(
                     .padding(horizontal = 16.dp, vertical = 4.dp),
                 cornerRadius = 12.dp
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
+                Column {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
                             text = config.lutPath1?.substringAfterLast('/') ?: "未选择文件",
-                            fontSize = 13.sp,
-                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            fontSize = 14.sp,
+                            color = MiuixTheme.colorScheme.onSurface,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f)
@@ -628,17 +632,34 @@ private fun LutTabContent(
                             Text("选择文件", fontSize = 12.sp, color = Color.White)
                         }
                     }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    SliderWithValue(
-                        label = "LUT 1 强度",
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 16.dp, end = 16.dp, bottom = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "LUT 1 强度",
+                            fontSize = 14.sp,
+                            color = MiuixTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            "%.0f%%".format(lut1Strength),
+                            fontSize = 14.sp,
+                            color = MiuixTheme.colorScheme.primary
+                        )
+                    }
+                    Slider(
                         value = lut1Strength,
                         onValueChange = { lut1Strength = it },
                         onValueChangeFinished = {
                             onConfigChange { it.copy(lutConcentration1 = lut1Strength / 100f) }
                         },
                         valueRange = 0f..100f,
-                        valueFormatter = { "%.0f%%".format(it) }
+                        modifier = Modifier.padding(horizontal = 8.dp)
                     )
+                    Spacer(modifier = Modifier.height(8.dp))
                 }
             }
         }
@@ -652,17 +673,19 @@ private fun LutTabContent(
                     .padding(horizontal = 16.dp, vertical = 4.dp),
                 cornerRadius = 12.dp
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
+                Column {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
                             text = config.lutPath2?.substringAfterLast('/') ?: "未选择文件",
-                            fontSize = 13.sp,
-                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                            maxLines = 1,
+                            fontSize = 14.sp,
+                            color = MiuixTheme.colorScheme.onSurface,
+                            maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f)
                         )
@@ -676,17 +699,34 @@ private fun LutTabContent(
                             Text("选择文件", fontSize = 12.sp, color = Color.White)
                         }
                     }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    SliderWithValue(
-                        label = "LUT 2 强度",
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 16.dp, end = 16.dp, bottom = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "LUT 2 强度",
+                            fontSize = 14.sp,
+                            color = MiuixTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            "%.0f%%".format(lut2Strength),
+                            fontSize = 14.sp,
+                            color = MiuixTheme.colorScheme.primary
+                        )
+                    }
+                    Slider(
                         value = lut2Strength,
                         onValueChange = { lut2Strength = it },
                         onValueChangeFinished = {
                             onConfigChange { it.copy(lutConcentration2 = lut2Strength / 100f) }
                         },
                         valueRange = 0f..100f,
-                        valueFormatter = { "%.0f%%".format(it) }
+                        modifier = Modifier.padding(horizontal = 8.dp)
                     )
+                    Spacer(modifier = Modifier.height(8.dp))
                 }
             }
         }
