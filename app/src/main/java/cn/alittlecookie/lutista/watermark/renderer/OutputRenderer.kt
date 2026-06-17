@@ -32,12 +32,19 @@ import java.io.File
 import kotlin.coroutines.coroutineContext
 import kotlin.math.ceil
 import kotlin.math.min
+import kotlin.math.sqrt
 
 class OutputRenderer(private val bitmapCache: BitmapCache) {
 
     companion object {
-        private const val TILE_SIZE = 2048
         private const val MEMORY_THRESHOLD_RATIO = 0.3
+        private const val MIN_TILE_SIZE = 1024
+        private const val MAX_TILE_SIZE = 8192
+    }
+
+    private fun computeTileSize(maxMemory: Long): Int {
+        val pixelBudget = maxMemory * MEMORY_THRESHOLD_RATIO / 4
+        return sqrt(pixelBudget.toDouble()).toInt().coerceIn(MIN_TILE_SIZE, MAX_TILE_SIZE)
     }
 
     suspend fun render(scene: Scene, config: OutputConfig): RenderResult =
@@ -51,7 +58,8 @@ class OutputRenderer(private val bitmapCache: BitmapCache) {
                 val maxMemory = Runtime.getRuntime().maxMemory()
 
                 if (requiredMemory > maxMemory * MEMORY_THRESHOLD_RATIO) {
-                    renderTiled(scene, layout, converter, config)
+                    val tileSize = computeTileSize(maxMemory)
+                    renderTiled(scene, layout, converter, config, tileSize)
                 } else {
                     renderDirect(scene, layout, converter, config)
                 }
@@ -79,7 +87,7 @@ class OutputRenderer(private val bitmapCache: BitmapCache) {
         drawBaseImage(canvas, scene.baseImage)
         canvas.restore()
 
-        scene.elements.forEach { drawElement(canvas, it, layout, converter, 1f) }
+        scene.elements.asReversed().forEach { drawElement(canvas, it, layout, converter, 1f) }
 
         val result = saveToFile(bitmap, config)
         bitmap.recycle()
@@ -90,10 +98,11 @@ class OutputRenderer(private val bitmapCache: BitmapCache) {
         scene: Scene,
         layout: LayoutResult,
         converter: UnitConverter,
-        config: OutputConfig
+        config: OutputConfig,
+        tileSize: Int
     ): RenderResult {
-        val tilesX = ceil(layout.canvasWidth.toFloat() / TILE_SIZE).toInt()
-        val tilesY = ceil(layout.canvasHeight.toFloat() / TILE_SIZE).toInt()
+        val tilesX = ceil(layout.canvasWidth.toFloat() / tileSize).toInt()
+        val tilesY = ceil(layout.canvasHeight.toFloat() / tileSize).toInt()
 
         val baseImageDecoder = BitmapRegionDecoder.newInstance(
             scene.baseImage.imageUri, false
@@ -106,10 +115,10 @@ class OutputRenderer(private val bitmapCache: BitmapCache) {
             for (ty in 0 until tilesY) {
                 for (tx in 0 until tilesX) {
                     coroutineContext.ensureActive()
-                    val tileX = tx * TILE_SIZE
-                    val tileY = ty * TILE_SIZE
-                    val tileW = min(TILE_SIZE, layout.canvasWidth - tileX)
-                    val tileH = min(TILE_SIZE, layout.canvasHeight - tileY)
+                    val tileX = tx * tileSize
+                    val tileY = ty * tileSize
+                    val tileW = min(tileSize, layout.canvasWidth - tileX)
+                    val tileH = min(tileSize, layout.canvasHeight - tileY)
 
                     renderTile(
                         scene, layout, converter, tileX, tileY, tileW, tileH,
@@ -158,7 +167,7 @@ class OutputRenderer(private val bitmapCache: BitmapCache) {
             tileX.toFloat(), tileY.toFloat(),
             (tileX + tileW).toFloat(), (tileY + tileH).toFloat()
         )
-        scene.elements.forEach { element ->
+        scene.elements.asReversed().forEach { element ->
             val bounds = layout.elementBounds[element.id] ?: return@forEach
             val elementRect = RectF(
                 bounds.totalX, bounds.totalY,

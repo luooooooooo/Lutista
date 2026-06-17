@@ -1,5 +1,6 @@
 package cn.alittlecookie.lutista.service
 
+import android.graphics.BitmapFactory
 import cn.alittlecookie.lutista.data.database.entity.TaskEntity
 import cn.alittlecookie.lutista.data.model.FilterConfig
 import cn.alittlecookie.lutista.data.repository.FilterRepository
@@ -10,8 +11,8 @@ import cn.alittlecookie.lutista.util.FileUtils
 import cn.alittlecookie.lutista.util.FilterConfigJson.toConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.opencv.imgcodecs.Imgcodecs
 import java.io.File
+import java.io.FileOutputStream
 
 class ImageProcessingService(
     private val engine: ImageProcessingEngine,
@@ -44,17 +45,15 @@ class ImageProcessingService(
 
         onProgress(0.2f)
 
-        val inputMat = Imgcodecs.imread(task.sourcePath, Imgcodecs.IMREAD_COLOR)
-        if (inputMat.empty()) {
-            throw IllegalArgumentException("无法读取图像: ${task.sourcePath}")
-        }
+        val inputBitmap = BitmapFactory.decodeFile(task.sourcePath)
+            ?: throw IllegalArgumentException("无法读取图像: ${task.sourcePath}")
 
         onProgress(0.3f)
 
-        val outputMat = if (filterConfig != null) {
-            engine.processImagePreview(inputMat, filterConfig)
+        val outputBitmap = if (filterConfig != null) {
+            engine.processImagePreview(inputBitmap, filterConfig)
         } else {
-            inputMat
+            inputBitmap
         }
 
         onProgress(0.7f)
@@ -66,20 +65,17 @@ class ImageProcessingService(
         }
 
         val outputDir = File(outputPath).parentFile
-        if (outputDir != null && !outputDir.exists()) {
-            outputDir.mkdirs()
+        if (outputDir != null && !outputDir.exists()) outputDir.mkdirs()
+
+        val ext = outputPath.substringAfterLast('.').lowercase()
+        val format = when (ext) {
+            "png" -> android.graphics.Bitmap.CompressFormat.PNG
+            else -> android.graphics.Bitmap.CompressFormat.JPEG
         }
+        FileOutputStream(outputPath).use { outputBitmap.compress(format, 95, it) }
 
-        onProgress(0.9f)
-
-        val success = Imgcodecs.imwrite(outputPath, outputMat)
-
-        inputMat.release()
-        outputMat.release()
-
-        if (!success) {
-            throw RuntimeException("保存图像失败: $outputPath")
-        }
+        if (outputBitmap != inputBitmap) inputBitmap.recycle()
+        outputBitmap.recycle()
 
         onProgress(1.0f)
         logger.i(TAG, "图像处理完成: $outputPath")

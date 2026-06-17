@@ -7,6 +7,7 @@ import cn.alittlecookie.lutista.data.database.dao.TaskDao
 import cn.alittlecookie.lutista.data.database.dao.WatermarkDao
 import cn.alittlecookie.lutista.data.repository.FilterRepository
 import cn.alittlecookie.lutista.data.repository.TaskRepository
+import cn.alittlecookie.lutista.data.repository.WatermarkRepository
 import cn.alittlecookie.lutista.domain.engine.ImageProcessingEngine
 import cn.alittlecookie.lutista.domain.engine.LutProcessor
 import cn.alittlecookie.lutista.domain.usecase.ApplyFilterUseCase
@@ -50,6 +51,7 @@ val appModule = module {
     // Repositories
     singleOf(::FilterRepository)
     singleOf(::TaskRepository)
+    singleOf(::WatermarkRepository)
 
     // Managers
     singleOf(::LogManager)

@@ -78,7 +78,7 @@ class LogManager(
         val current = _logEntries.value.toMutableList()
         current.add(entry)
         if (current.size > MAX_MEMORY_ENTRIES) {
-            current.removeFirst()
+            current.removeAt(0)
         }
         _logEntries.value = current
     }

@@ -31,12 +31,14 @@ fun MainTabScreen(
     onPhotoSelected: (List<String>) -> Unit,
     launchPicker: () -> Unit = {},
     onEditFilter: (Long) -> Unit = {},
+    onEditWatermark: (Long) -> Unit = {},
     initialPage: Int = 0
 ) {
     var selectedPage by rememberSaveable { mutableIntStateOf(initialPage) }
     val pages = MainPage.entries
     val scrollBehavior = MiuixScrollBehavior(rememberTopAppBarState())
     var recipeImportTrigger by remember { mutableLongStateOf(0L) }
+    var recipeCreateTrigger by remember { mutableLongStateOf(0L) }
 
     Scaffold(
         topBar = {
@@ -47,6 +49,7 @@ fun MainTabScreen(
                 actions = {
                     if (selectedPage == 1) {
                         RecipeRoomTopBar(
+                            onCreateClick = { recipeCreateTrigger++ },
                             onImportClick = { recipeImportTrigger++ }
                         )
                     }
@@ -77,7 +80,9 @@ fun MainTabScreen(
                 modifier = Modifier.padding(top = paddingValues.calculateTopPadding()),
                 scrollBehavior = scrollBehavior,
                 onEditFilter = onEditFilter,
-                importTrigger = recipeImportTrigger
+                onEditWatermark = onEditWatermark,
+                importTrigger = recipeImportTrigger,
+                createTrigger = recipeCreateTrigger
             )
             2 -> SettingsScreen(
                 modifier = Modifier.padding(top = paddingValues.calculateTopPadding()),

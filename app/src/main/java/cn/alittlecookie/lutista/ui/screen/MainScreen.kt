@@ -45,6 +45,8 @@ fun MainScreen() {
     var selectedPhotoUris by remember { mutableStateOf<List<String>>(emptyList()) }
     var showFilterEditor by remember { mutableStateOf(false) }
     var editingFilterId by remember { mutableStateOf(0L) }
+    var showWatermarkEditor by remember { mutableStateOf(false) }
+    var editingWatermarkId by remember { mutableStateOf(0L) }
     var returnToRecipeTab by remember { mutableStateOf(false) }
 
     // Check Vulkan availability on first composition
@@ -83,6 +85,14 @@ fun MainScreen() {
                 returnToRecipeTab = true
             }
         )
+    } else if (showWatermarkEditor) {
+        WatermarkEditorScreen(
+            watermarkId = editingWatermarkId,
+            onBackClick = {
+                showWatermarkEditor = false
+                returnToRecipeTab = true
+            }
+        )
     } else if (showPhotoProcess && selectedPhotoUris.isNotEmpty()) {
         PhotoProcessScreen(
             photoUris = selectedPhotoUris,
@@ -111,6 +121,10 @@ fun MainScreen() {
             onEditFilter = { filterId ->
                 editingFilterId = filterId
                 showFilterEditor = true
+            },
+            onEditWatermark = { watermarkId ->
+                editingWatermarkId = watermarkId
+                showWatermarkEditor = true
             },
             initialPage = if (returnToRecipeTab) {
                 returnToRecipeTab = false

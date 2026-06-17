@@ -1,5 +1,6 @@
 package cn.alittlecookie.lutista.watermark.engine
 
+import android.graphics.BitmapFactory
 import cn.alittlecookie.lutista.watermark.model.Anchor
 import cn.alittlecookie.lutista.watermark.model.Constraint
 import cn.alittlecookie.lutista.watermark.model.ContainerElement
@@ -22,6 +23,7 @@ import cn.alittlecookie.lutista.watermark.model.TextElement
  */
 class LayoutEngine(private val converter: UnitConverter) {
     private val textMeasurer = TextMeasurer(converter)
+    private val aspectRatioCache = mutableMapOf<String, Double>()
 
     fun layout(scene: Scene): LayoutResult {
         val borderPx = scene.baseImage.borderWidth.let {
@@ -30,14 +32,16 @@ class LayoutEngine(private val converter: UnitConverter) {
 
         val canvasW = converter.imageWidth + borderPx.left + borderPx.right
         val canvasH = converter.imageHeight + borderPx.top + borderPx.bottom
-        val contentOrigin = Offset(borderPx.left, borderPx.top)
-        val contentSize = Size(converter.imageWidth.toFloat(), converter.imageHeight.toFloat())
 
         val bounds = mutableMapOf<String, ElementBounds>()
-        val constraint = Constraint(maxWidth = contentSize.width, maxHeight = contentSize.height)
+
+        // Root elements reference full canvas (incl. borders) per spec 5.2
+        val rootOrigin = Offset(0f, 0f)
+        val rootSize = Size(canvasW.toFloat(), canvasH.toFloat())
+        val rootConstraint = Constraint(maxWidth = rootSize.width, maxHeight = rootSize.height)
 
         scene.elements.forEach { el ->
-            layoutElement(el, contentOrigin, contentSize, constraint, bounds)
+            layoutElement(el, rootOrigin, rootSize, rootConstraint, bounds)
         }
 
         return LayoutResult(canvasW.toInt(), canvasH.toInt(), bounds)
@@ -92,12 +96,42 @@ class LayoutEngine(private val converter: UnitConverter) {
     }
 
     private fun measureImage(element: ImageElement, constraint: Constraint): Size {
-        val w = element.width?.let { converter.gmToPx(it) } ?: constraint.maxWidth
-        val h = element.height?.let { converter.gmToPx(it) } ?: constraint.maxHeight
-        return Size(
-            w.coerceIn(constraint.minWidth, constraint.maxWidth),
-            h.coerceIn(constraint.minHeight, constraint.maxHeight)
-        )
+        val sizeGm = element.width ?: return Size(constraint.maxWidth, constraint.maxHeight)
+        val sizePx = converter.gmToPx(sizeGm)
+
+        val ratio = getAspectRatio(element.imageUri)
+        val (w, h) = if (ratio != null) {
+            val spx = sizePx.toDouble()
+            when (element.imageSizeRef) {
+                1 -> Pair(spx * ratio, spx)
+                2 -> {
+                    val d = kotlin.math.sqrt(1.0 + ratio * ratio)
+                    Pair(spx * ratio / d, spx / d)
+                }
+                else -> Pair(spx, spx / ratio)
+            }
+        } else {
+            val spx = sizePx.toDouble()
+            Pair(spx, spx)
+        }
+
+        // 不限制尺寸，超出的部分由渲染时 clipRect 自然截断
+        return Size(w.toFloat(), h.toFloat())
+    }
+
+    private fun getAspectRatio(uri: String): Double? {
+        if (uri.isEmpty()) return null
+        aspectRatioCache[uri]?.let { return it }
+        try {
+            val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(uri, opts)
+            if (opts.outWidth > 0 && opts.outHeight > 0) {
+                val ratio = opts.outWidth.toDouble() / opts.outHeight.toDouble()
+                aspectRatioCache[uri] = ratio
+                return ratio
+            }
+        } catch (_: Exception) {}
+        return null
     }
 
     private fun measureContainer(
@@ -107,11 +141,11 @@ class LayoutEngine(private val converter: UnitConverter) {
     ): Size {
         val paddingPx = with(converter) { container.padding.toPx() }
         val innerW = when (container.widthMode) {
-            SizeMode.FIXED -> converter.gmToPx(container.width!!)
+            SizeMode.FIXED -> converter.gmToPx(container.width ?: 10f)
             SizeMode.WRAP_CONTENT -> constraint.maxWidth - paddingPx.left - paddingPx.right
         }
         val innerH = when (container.heightMode) {
-            SizeMode.FIXED -> converter.gmToPx(container.height!!)
+            SizeMode.FIXED -> converter.gmToPx(container.height ?: 10f)
             SizeMode.WRAP_CONTENT -> constraint.maxHeight - paddingPx.top - paddingPx.bottom
         }
         val innerSize = Size(innerW, innerH)

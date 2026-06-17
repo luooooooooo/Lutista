@@ -31,7 +31,7 @@ class WatermarkProcessor(private val bitmapCache: BitmapCache) {
         canvas.restore()
 
         val renderer = OutputRenderer(bitmapCache)
-        scene.elements.forEach { element ->
+        scene.elements.asReversed().forEach { element ->
             renderer.drawElementOnCanvas(canvas, element, layout, converter, 1f)
         }
 

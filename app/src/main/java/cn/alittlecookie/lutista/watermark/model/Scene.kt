@@ -64,7 +64,8 @@ data class ImageElement(
     val imageUri: String,
     val width: Float? = null,
     val height: Float? = null,
-    val maintainAspectRatio: Boolean = true
+    val maintainAspectRatio: Boolean = true,
+    val imageSizeRef: Int = 0 // 0=宽度, 1=高度, 2=对角线
 ) : Element()
 
 /**

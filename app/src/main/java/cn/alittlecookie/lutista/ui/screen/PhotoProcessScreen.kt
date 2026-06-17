@@ -66,9 +66,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.koin.compose.koinInject
-import org.opencv.android.Utils
-import org.opencv.core.Mat
-import org.opencv.imgproc.Imgproc
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
@@ -327,32 +324,15 @@ fun PhotoProcessScreen(
 
                         try {
                             ensureActive()
-                            val inputMat = Mat()
-                            Utils.bitmapToMat(inputBitmap, inputMat)
-                            Imgproc.cvtColor(inputMat, inputMat, Imgproc.COLOR_RGBA2BGR)
-
-                            ensureActive()
                             val filterConfig = buildFilterConfig(effectiveSettings.filterId)
-                            val outputMat = if (filterConfig != null) {
-                                engine.processImagePreview(inputMat, filterConfig)
+                            val resultBitmap = if (filterConfig != null) {
+                                engine.processImagePreview(inputBitmap, filterConfig)
                             } else {
-                                inputMat.clone()
+                                inputBitmap.copy(Bitmap.Config.ARGB_8888, false)
                             }
-                            inputMat.release()
+                            inputBitmap.recycle()
 
-                            ensureActive()
-                            val rgbaMat = Mat()
-                            Imgproc.cvtColor(outputMat, rgbaMat, Imgproc.COLOR_BGR2RGBA)
-                            val result = Bitmap.createBitmap(
-                                rgbaMat.cols(),
-                                rgbaMat.rows(),
-                                Bitmap.Config.ARGB_8888
-                            )
-                            Utils.matToBitmap(rgbaMat, result)
-                            rgbaMat.release()
-                            outputMat.release()
-
-                            result
+                            resultBitmap
                         } catch (e: Exception) {
                             throw e
                         }
