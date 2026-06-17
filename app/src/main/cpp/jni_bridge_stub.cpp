@@ -9,7 +9,7 @@ static void nativeUploadLut(JNIEnv* env, jobject thiz, jlong handle, jfloatArray
 static void nativeUploadCurves(JNIEnv* env, jobject thiz, jlong handle, jfloatArray curveData) {}
 static jbyteArray nativeProcessImage(JNIEnv* env, jobject thiz, jlong handle, jbyteArray imageData, jint width, jint height, jfloatArray params) { return nullptr; }
 
-static const char* VULKAN_GPU_ENGINE_CLASS = "cn/alittlecookie/lut2photo_n/gpu/VulkanGpuEngine";
+static const char* VULKAN_GPU_ENGINE_CLASS = "cn/alittlecookie/lutista/gpu/VulkanGpuEngine";
 
 static JNINativeMethod g_methods[] = {
     {"nativeInit",           "(Ljava/util/Map;)J",    (void*)nativeInit},

@@ -196,7 +196,7 @@ static jbyteArray nativeProcessImage(JNIEnv* env, jobject thiz, jlong handle,
 
 // ── Method table and JNI_OnLoad ──
 
-static const char* VULKAN_GPU_ENGINE_CLASS = "cn/alittlecookie/lut2photo_n/gpu/VulkanGpuEngine";
+static const char* VULKAN_GPU_ENGINE_CLASS = "cn/alittlecookie/lutista/gpu/VulkanGpuEngine";
 
 static JNINativeMethod g_methods[] = {
     {"nativeInit",           "(Ljava/util/Map;)J",      (void*)nativeInit},

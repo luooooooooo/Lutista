@@ -6,10 +6,10 @@
 -keep class org.opencv.** { *; }
 
 # Keep libgphoto2 JNI
--keep class cn.alittlecookie.lut2photo_n.jni.** { *; }
+-keep class cn.alittlecookie.lutista.jni.** { *; }
 
 # Keep Room entities
--keep class cn.alittlecookie.lut2photo_n.data.database.entity.** { *; }
+-keep class cn.alittlecookie.lutista.data.database.entity.** { *; }
 
 # Keep Hilt
 -keep class dagger.hilt.** { *; }

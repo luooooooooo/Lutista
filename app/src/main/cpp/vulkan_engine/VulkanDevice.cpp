@@ -29,7 +29,7 @@ void VulkanDevice::destroy() {
 bool VulkanDevice::createInstance() {
     VkApplicationInfo appInfo{};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    appInfo.pApplicationName = "Lut2Photo";
+    appInfo.pApplicationName = "Lutista";
     appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
     appInfo.pEngineName = "VulkanEngine";
     appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);

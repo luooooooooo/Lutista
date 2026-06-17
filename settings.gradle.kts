@@ -22,5 +22,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Lut2Photo-N"
+rootProject.name = "Lutista"
 include(":app")

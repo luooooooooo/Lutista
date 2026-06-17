@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "cn.alittlecookie.lut2photo_n"
+    namespace = "cn.alittlecookie.lutista"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "cn.alittlecookie.lut2photo_n"
+        applicationId = "cn.alittlecookie.lutista"
         minSdk = 29
         targetSdk = 37
         versionCode = 1
