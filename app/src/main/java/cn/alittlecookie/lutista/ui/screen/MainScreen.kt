@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -22,6 +23,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.navigation3.runtime.NavKey
+import androidx.navigation3.runtime.entryProvider
+import androidx.navigation3.runtime.rememberDecoratedNavEntries
+import androidx.navigation3.ui.NavDisplay
 import cn.alittlecookie.lutista.gpu.VulkanGpuEngine
 import org.koin.compose.koinInject
 import top.yukonga.miuix.kmp.basic.Button
@@ -30,21 +35,23 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.window.WindowDialog
 
+sealed interface Screen : NavKey {
+    data object Main : Screen
+    data class PhotoProcess(val uris: List<String>) : Screen
+    data class FilterEditor(val filterId: Long) : Screen
+    data class WatermarkEditor(val watermarkId: Long) : Screen
+}
+
 @Composable
 fun MainScreen() {
     val vulkanGpuEngine: VulkanGpuEngine = koinInject()
     val context = LocalContext.current
 
     var showVulkanDialog by remember { mutableStateOf(false) }
-    var showPhotoProcess by remember { mutableStateOf(false) }
-    var selectedPhotoUris by remember { mutableStateOf<List<String>>(emptyList()) }
-    var showFilterEditor by remember { mutableStateOf(false) }
-    var editingFilterId by remember { mutableStateOf(0L) }
-    var showWatermarkEditor by remember { mutableStateOf(false) }
-    var editingWatermarkId by remember { mutableStateOf(0L) }
     var returnToRecipeTab by remember { mutableStateOf(false) }
 
-    // Wait for Vulkan init to complete, then check availability
+    val backStack = remember { mutableStateListOf<NavKey>(Screen.Main) }
+
     LaunchedEffect(Unit) {
         while (!vulkanGpuEngine.initialized) {
             kotlinx.coroutines.delay(100)
@@ -54,15 +61,30 @@ fun MainScreen() {
         }
     }
 
-    // Vulkan not available dialog
     if (showVulkanDialog) {
-        VulkanNotAvailableDialog(
-            onDownloadClick = {
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/qh7574/Lutista-Android"))
-                context.startActivity(intent)
-            },
-            onDismiss = { showVulkanDialog = false }
-        )
+        WindowDialog(show = true, onDismissRequest = { showVulkanDialog = false }) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text("设备不支持", fontSize = 22.sp, fontWeight = FontWeight.Bold,
+                    color = MiuixTheme.colorScheme.onSurface)
+                Text("您的设备不支持 Vulkan GPU 加速。\n请下载支持 CPU 处理的版本。",
+                    fontSize = 14.sp, color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    textAlign = TextAlign.Center, lineHeight = 20.sp)
+                Button(onClick = {
+                    context.startActivity(Intent(Intent.ACTION_VIEW,
+                        Uri.parse("https://github.com/qh7574/Lutista-Android")))
+                }, modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(color = MiuixTheme.colorScheme.primary)) {
+                    Text("下载 CPU 版本", color = Color.White)
+                }
+                Button(onClick = { showVulkanDialog = false }, modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(color = MiuixTheme.colorScheme.surfaceVariant)) {
+                    Text("取消", color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+                }
+            }
+        }
         return
     }
 
@@ -70,115 +92,71 @@ fun MainScreen() {
         contract = ActivityResultContracts.PickMultipleVisualMedia(50)
     ) { uris ->
         if (uris.isNotEmpty()) {
-            selectedPhotoUris = uris.map { it.toString() }
-            showPhotoProcess = true
+            backStack.add(Screen.PhotoProcess(uris.map { it.toString() }))
         }
     }
 
-    if (showFilterEditor) {
-        FilterEditorScreen(
-            filterId = editingFilterId,
-            onBackClick = {
-                showFilterEditor = false
-                returnToRecipeTab = true
-            }
-        )
-    } else if (showWatermarkEditor) {
-        WatermarkEditorScreen(
-            watermarkId = editingWatermarkId,
-            onBackClick = {
-                showWatermarkEditor = false
-                returnToRecipeTab = true
-            }
-        )
-    } else if (showPhotoProcess && selectedPhotoUris.isNotEmpty()) {
-        PhotoProcessScreen(
-            photoUris = selectedPhotoUris,
-            onBackClick = { showPhotoProcess = false },
-            onProcessComplete = { result ->
-                showPhotoProcess = false
-            },
-            onContinueProcessing = {
-                showPhotoProcess = false
-                photoPickerLauncher.launch(
-                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+    val entryProvider = remember(backStack) {
+        entryProvider<NavKey> {
+            entry(Screen.Main) {
+                MainTabScreen(
+                    onPhotoSelected = { uris ->
+                        backStack.add(Screen.PhotoProcess(uris))
+                    },
+                    launchPicker = {
+                        photoPickerLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    },
+                    onEditFilter = { filterId ->
+                        backStack.add(Screen.FilterEditor(filterId))
+                    },
+                    onEditWatermark = { watermarkId ->
+                        backStack.add(Screen.WatermarkEditor(watermarkId))
+                    },
+                    initialPage = if (returnToRecipeTab) { returnToRecipeTab = false; 1 } else 0
                 )
             }
-        )
-    } else {
-        MainTabScreen(
-            onPhotoSelected = { uris ->
-                selectedPhotoUris = uris
-                showPhotoProcess = true
-            },
-            launchPicker = {
-                photoPickerLauncher.launch(
-                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+            entry<Screen.PhotoProcess> { screen ->
+                PhotoProcessScreen(
+                    photoUris = screen.uris,
+                    onBackClick = { backStack.removeLast() },
+                    onProcessComplete = { backStack.removeLast() },
+                    onContinueProcessing = {
+                        photoPickerLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    }
                 )
-            },
-            onEditFilter = { filterId ->
-                editingFilterId = filterId
-                showFilterEditor = true
-            },
-            onEditWatermark = { watermarkId ->
-                editingWatermarkId = watermarkId
-                showWatermarkEditor = true
-            },
-            initialPage = if (returnToRecipeTab) {
-                returnToRecipeTab = false
-                1
-            } else 0
-        )
-    }
-}
-
-@Composable
-private fun VulkanNotAvailableDialog(
-    onDownloadClick: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    WindowDialog(
-        show = true,
-        onDismissRequest = onDismiss
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text(
-                text = "设备不支持",
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold,
-                color = MiuixTheme.colorScheme.onSurface
-            )
-
-            Text(
-                text = "您的设备不支持 Vulkan GPU 加速。\n请下载支持 CPU 处理的版本。",
-                fontSize = 14.sp,
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                textAlign = TextAlign.Center,
-                lineHeight = 20.sp
-            )
-
-            Button(
-                onClick = onDownloadClick,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(
-                    color = MiuixTheme.colorScheme.primary
-                )
-            ) {
-                Text("下载 CPU 版本", color = Color.White)
             }
-
-            Button(
-                onClick = onDismiss,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(
-                    color = MiuixTheme.colorScheme.surfaceVariant
+            entry<Screen.FilterEditor> { screen ->
+                FilterEditorScreen(
+                    filterId = screen.filterId,
+                    onBackClick = {
+                        returnToRecipeTab = true
+                        backStack.removeLast()
+                    }
                 )
-            ) {
-                Text("取消", color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+            }
+            entry<Screen.WatermarkEditor> { screen ->
+                WatermarkEditorScreen(
+                    watermarkId = screen.watermarkId,
+                    onBackClick = {
+                        returnToRecipeTab = true
+                        backStack.removeLast()
+                    }
+                )
             }
         }
     }
+
+    val entries = rememberDecoratedNavEntries(
+        backStack = backStack,
+        entryProvider = entryProvider
+    )
+
+    NavDisplay(
+        entries = entries,
+        onBack = { backStack.removeLast() }
+    )
 }
