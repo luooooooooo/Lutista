@@ -78,6 +78,7 @@ import top.yukonga.miuix.kmp.basic.rememberTopAppBarState
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.icon.extended.More
+import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.overlay.OverlayListPopup
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
@@ -345,45 +346,64 @@ fun FilterEditorScreen(
                 }
             }
         }
-    }
 
-    // 重命名对话框
-    if (renameDialogVisible) {
-        RenameDialog(
-            currentName = renameDialogText,
-            onNameChange = { renameDialogText = it },
-            onConfirm = {
-                val trimmed = renameDialogText.trim()
-                if (trimmed.isNotEmpty()) {
-                    state.updateName(trimmed)
-                }
-                renameDialogVisible = false
-            },
-            onDismiss = { renameDialogVisible = false }
-        )
-    }
+        // 重命名对话框
+        if (renameDialogVisible) {
+            RenameDialog(
+                currentName = renameDialogText,
+                onNameChange = { renameDialogText = it },
+                onConfirm = {
+                    val trimmed = renameDialogText.trim()
+                    if (trimmed.isNotEmpty()) {
+                        state.updateName(trimmed)
+                    }
+                    renameDialogVisible = false
+                },
+                onDismiss = { renameDialogVisible = false }
+            )
+        }
 
-    // 保存确认对话框（在 Scaffold 之后，覆盖在最上层）
-    if (showBackDialog) {
-        BackDialog(
-            onSave = {
-                showBackDialog = false
-                scope.launch {
-                    if (state.save()) {
+        if (showBackDialog) {
+            OverlayDialog(
+                show = showBackDialog,
+                onDismissRequest = { showBackDialog = false }
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 0.dp, vertical = 0.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text("保存更改?", fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
+                        color = MiuixTheme.colorScheme.onSurface)
+                    Text("当前滤镜有未保存的更改", fontSize = 14.sp,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+                    Button(onClick = {
+                        showBackDialog = false
+                        scope.launch {
+                            if (state.save()) onBackClick()
+                        }
+                    }, modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(color = MiuixTheme.colorScheme.primary)) {
+                        Text("保存修改", color = Color.White)
+                    }
+                    Button(onClick = {
+                        showBackDialog = false
+                        state.discardChanges()
                         onBackClick()
+                    }, modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(color = MiuixTheme.colorScheme.secondaryContainer)) {
+                        Text("放弃修改", color = MiuixTheme.colorScheme.error)
+                    }
+                    Button(onClick = { showBackDialog = false }, modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(color = MiuixTheme.colorScheme.secondaryContainer)) {
+                        Text("继续修改", color = MiuixTheme.colorScheme.onSurface)
                     }
                 }
-            },
-            onDiscard = {
-                showBackDialog = false
-                state.discardChanges()
-                onBackClick()
-            },
-            onCancel = { showBackDialog = false }
-        )
+            }
+        }
     }
 
-    // 返回处理（在 Scaffold 之后注册，优先级更高）
+    // 返回处理
     BackHandler {
         if (state.hasChanges) {
             showBackDialog = true
@@ -469,83 +489,6 @@ private fun PreviewArea(
                     fontSize = 12.sp,
                     color = Color.White
                 )
-            }
-        }
-    }
-}
-
-// ── 返回对话框 ──────────────────────────────────────────────────────
-
-@Composable
-private fun BackDialog(
-    onSave: () -> Unit,
-    onDiscard: () -> Unit,
-    onCancel: () -> Unit
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.5f))
-            .clickable(onClick = onCancel),
-        contentAlignment = Alignment.Center
-    ) {
-        Card(
-            modifier = Modifier
-                .width(300.dp)
-                .clickable(enabled = false, onClick = {}),
-            cornerRadius = 24.dp
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Text(
-                    text = "保存更改?",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MiuixTheme.colorScheme.onSurface
-                )
-
-                Text(
-                    text = "当前滤镜有未保存的更改",
-                    fontSize = 14.sp,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Button(
-                    onClick = onSave,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(
-                        color = MiuixTheme.colorScheme.primary
-                    )
-                ) {
-                    Text("保存修改", color = Color.White)
-                }
-
-                Button(
-                    onClick = onDiscard,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(
-                        color = MiuixTheme.colorScheme.secondaryContainer
-                    )
-                ) {
-                    Text("放弃修改", color = MiuixTheme.colorScheme.error)
-                }
-
-                Button(
-                    onClick = onCancel,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(
-                        color = MiuixTheme.colorScheme.surfaceVariant
-                    )
-                ) {
-                    Text("继续修改", color = MiuixTheme.colorScheme.onSurface)
-                }
             }
         }
     }

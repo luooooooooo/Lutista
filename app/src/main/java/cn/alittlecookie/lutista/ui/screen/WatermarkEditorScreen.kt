@@ -280,32 +280,58 @@ fun WatermarkEditorScreen(
                 }
             }
         }
-    }
 
-    if (showRenameDialog) {
-        RenameDialog(
-            currentName = renameText, onNameChange = { renameText = it },
-            onConfirm = {
-                val t = renameText.trim()
-                if (t.isNotEmpty()) state.updateName(t)
-                showRenameDialog = false
-            },
-            onDismiss = { showRenameDialog = false }
-        )
-    }
+        if (showRenameDialog) {
+            RenameDialog(
+                currentName = renameText, onNameChange = { renameText = it },
+                onConfirm = {
+                    val t = renameText.trim()
+                    if (t.isNotEmpty()) state.updateName(t)
+                    showRenameDialog = false
+                },
+                onDismiss = { showRenameDialog = false }
+            )
+        }
 
-    if (showBackDialog) {
-        BackDialog(
-            onSave = {
-                showBackDialog = false
-                scope.launch {
-                    if (state.save()) onBackClick()
-                    else Toast.makeText(context, "保存失败", Toast.LENGTH_SHORT).show()
+        if (showBackDialog) {
+            OverlayDialog(
+                show = showBackDialog,
+                onDismissRequest = { showBackDialog = false }
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 0.dp, vertical = 0.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text("保存更改?", fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
+                        color = MiuixTheme.colorScheme.onSurface)
+                    Text("当前水印有未保存的更改", fontSize = 14.sp,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+                    Button(onClick = {
+                        showBackDialog = false
+                        scope.launch {
+                            if (state.save()) onBackClick()
+                            else Toast.makeText(context, "保存失败", Toast.LENGTH_SHORT).show()
+                        }
+                    }, modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(color = MiuixTheme.colorScheme.primary)) {
+                        Text("保存修改", color = Color.White)
+                    }
+                    Button(onClick = {
+                        showBackDialog = false
+                        state.discardChanges()
+                        onBackClick()
+                    }, modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(color = MiuixTheme.colorScheme.secondaryContainer)) {
+                        Text("放弃修改", color = MiuixTheme.colorScheme.error)
+                    }
+                    Button(onClick = { showBackDialog = false }, modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(color = MiuixTheme.colorScheme.secondaryContainer)) {
+                        Text("继续修改", color = MiuixTheme.colorScheme.onSurface)
+                    }
                 }
-            },
-            onDiscard = { showBackDialog = false; state.discardChanges(); onBackClick() },
-            onCancel = { showBackDialog = false }
-        )
+            }
+        }
     }
 
     BackHandler {
@@ -1141,34 +1167,6 @@ private fun MarginSlider(label: String, value: Float, onValueChange: (Float) -> 
 }
 
 @Composable
-private fun BackDialog(onSave: () -> Unit, onDiscard: () -> Unit, onCancel: () -> Unit) {
-    Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.5f)).clickable(onClick = onCancel),
-        contentAlignment = Alignment.Center) {
-        Card(modifier = Modifier.width(300.dp).clickable(enabled = false, onClick = {}), cornerRadius = 24.dp) {
-            Column(modifier = Modifier.fillMaxWidth().padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text("保存更改?", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = MiuixTheme.colorScheme.onSurface)
-                Text("当前水印有未保存的更改", fontSize = 14.sp, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
-                Spacer(modifier = Modifier.height(4.dp))
-                Button(onClick = onSave, modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(color = MiuixTheme.colorScheme.primary)) {
-                    Text("保存修改", color = Color.White)
-                }
-                Button(onClick = onDiscard, modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(color = MiuixTheme.colorScheme.secondaryContainer)) {
-                    Text("放弃修改", color = MiuixTheme.colorScheme.error)
-                }
-                Button(onClick = onCancel, modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(color = MiuixTheme.colorScheme.surfaceVariant)) {
-                    Text("继续修改", color = MiuixTheme.colorScheme.onSurface)
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun SectionTitle(title: String) {
     Text(title, fontSize = 13.sp, fontWeight = FontWeight.Medium,
         color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
@@ -1207,12 +1205,14 @@ private fun ColorPickerButton(
             onDismissRequest = { showDialog = false }
         ) {
             Column(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 0.dp, vertical = 0.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text("选择颜色", fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
+                Text("选择颜色", fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
                     color = MiuixTheme.colorScheme.onSurface,
                     modifier = Modifier.padding(bottom = 8.dp))
+
+                Spacer(modifier = Modifier.height(8.dp))
 
                 ColorPalette(
                     color = Color(currentColor),
