@@ -56,9 +56,12 @@ import androidx.compose.ui.unit.sp
 import cn.alittlecookie.lutista.data.database.entity.FilterEntity
 import cn.alittlecookie.lutista.data.model.FilterConfig
 import cn.alittlecookie.lutista.data.repository.FilterRepository
+import cn.alittlecookie.lutista.data.repository.WatermarkRepository
 import cn.alittlecookie.lutista.domain.engine.ImageProcessingEngine
 import cn.alittlecookie.lutista.manager.LogManager
 import cn.alittlecookie.lutista.manager.SettingsManager
+import cn.alittlecookie.lutista.watermark.model.Scene
+import cn.alittlecookie.lutista.watermark.renderer.WatermarkProcessor
 import coil.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
@@ -111,7 +114,9 @@ fun PhotoProcessScreen(
 
     val context = LocalContext.current
     val filterRepository: FilterRepository = koinInject()
+    val watermarkRepository: WatermarkRepository = koinInject()
     val engine: ImageProcessingEngine = koinInject()
+    val watermarkProcessor: WatermarkProcessor = koinInject()
     val settingsManager: SettingsManager = koinInject()
     val logger: LogManager = koinInject()
     val scrollBehavior = MiuixScrollBehavior(rememberTopAppBarState())
@@ -133,6 +138,9 @@ fun PhotoProcessScreen(
 
     var globalFilterId by remember { mutableStateOf(0L) }
     var globalWatermarkId by remember { mutableStateOf("none") }
+
+    // Watermark scene cache: map watermarkId (String) -> Scene
+    val watermarkSceneCache = remember { mutableMapOf<String, Scene?>() }
 
     val perImageSettings = remember { mutableStateListOf<PhotoEffectSettings>() }
     repeat(photos.size) { index ->
@@ -170,6 +178,17 @@ fun PhotoProcessScreen(
         )
     }
 
+    suspend fun loadWatermarkScene(watermarkId: String): Scene? {
+        if (watermarkId == "none") return null
+        val id = watermarkId.toLongOrNull() ?: return null
+        watermarkSceneCache[watermarkId]?.let { return it }
+        return withContext(Dispatchers.IO) {
+            val scene = watermarkRepository.getSceneById(id)
+            watermarkSceneCache[watermarkId] = scene
+            scene
+        }
+    }
+
     val filtersFromDb by filterRepository.getAllFilters().collectAsState(initial = emptyList())
 
     val filterOptions = remember(filtersFromDb) {
@@ -181,13 +200,15 @@ fun PhotoProcessScreen(
         }
     }
 
-    val watermarkOptions = remember {
-        listOf(
-            WatermarkOption("none", "无水印", null),
-            WatermarkOption("white", "白色边框", null),
-            WatermarkOption("black", "黑色边框", null),
-            WatermarkOption("custom", "自定义水印", null)
-        )
+    val watermarksFromDb by watermarkRepository.getAllWatermarks().collectAsState(initial = emptyList())
+
+    val watermarkOptions = remember(watermarksFromDb) {
+        buildList {
+            add(WatermarkOption("none", "无水印", null))
+            addAll(watermarksFromDb.map { wm ->
+                WatermarkOption(wm.id.toString(), wm.name, null)
+            })
+        }
     }
 
     val globalSettingsEntries = listOf(
@@ -325,12 +346,20 @@ fun PhotoProcessScreen(
                         try {
                             ensureActive()
                             val filterConfig = buildFilterConfig(effectiveSettings.filterId)
-                            val resultBitmap = if (filterConfig != null) {
+                            var resultBitmap = if (filterConfig != null) {
                                 engine.processImagePreview(inputBitmap, filterConfig)
                             } else {
                                 inputBitmap.copy(Bitmap.Config.ARGB_8888, false)
                             }
                             inputBitmap.recycle()
+
+                            // Apply watermark if selected
+                            val wmScene = loadWatermarkScene(effectiveSettings.watermarkId)
+                            if (wmScene != null) {
+                                val watermarked = watermarkProcessor.applyWatermark(resultBitmap, wmScene)
+                                if (watermarked != resultBitmap) resultBitmap.recycle()
+                                resultBitmap = watermarked
+                            }
 
                             resultBitmap
                         } catch (e: Exception) {
@@ -579,6 +608,8 @@ private fun MainPreviewArea(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val watermarkRepository: WatermarkRepository = koinInject()
+    val watermarkProcessor: WatermarkProcessor = koinInject()
     var isLongPressed by remember { mutableStateOf(false) }
     var previewBitmap by remember { mutableStateOf<Bitmap?>(null) }
 
@@ -651,8 +682,8 @@ private fun MainPreviewArea(
         }
     }
 
-    // Step 2: Apply filter using cached bytes (only when filter changes)
-    LaunchedEffect(cachedPhotoUri, cachedRgbaBytes, currentSettings.filterId, filtersFromDb) {
+    // Step 2: Apply filter + watermark using cached bytes (only when filter/watermark changes)
+    LaunchedEffect(cachedPhotoUri, cachedRgbaBytes, currentSettings.filterId, currentSettings.watermarkId, filtersFromDb) {
         val gen = ++filterGeneration
         val bytes = cachedRgbaBytes
         if (bytes == null || cachedWidth == 0) {
@@ -665,16 +696,23 @@ private fun MainPreviewArea(
             val result = if (filterConfig != null) {
                 engine.processImageGpuFromBytes(bytes, cachedWidth, cachedHeight, filterConfig)
             } else {
-                // Default filter: show original
                 val bmp = Bitmap.createBitmap(cachedWidth, cachedHeight, Bitmap.Config.ARGB_8888)
                 bmp.copyPixelsFromBuffer(java.nio.ByteBuffer.wrap(bytes))
                 bmp
             }
+            // Apply watermark if selected
+            val wmId = currentSettings.watermarkId
+            android.util.Log.d("PhotoProcess", "Preview watermark: id=$wmId")
+            val wmScene = if (wmId != "none") watermarkRepository.getSceneById(wmId.toLongOrNull() ?: 0L) else null
+            android.util.Log.d("PhotoProcess", "Preview watermark scene: ${wmScene?.let { "elements=${it.elements.size}" } ?: "null"}")
+            val finalResult = if (result != null && wmScene != null) {
+                watermarkProcessor.applyWatermark(result, wmScene)
+            } else result ?: return@withContext
+
             val elapsed = (System.nanoTime() - t0) / 1_000_000
             android.util.Log.d("PreviewTiming", "filterId=${currentSettings.filterId} gen=$gen elapsed=${elapsed}ms size=${cachedWidth}x${cachedHeight}")
-            // Only apply if this is still the latest filter change
             if (gen == filterGeneration) {
-                previewBitmap = result
+                previewBitmap = finalResult
             }
         }
     }

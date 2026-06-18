@@ -14,8 +14,13 @@ class VulkanGpuEngine(private val logger: LogManager) {
 
     private var nativeHandle: Long = 0L
 
+    /** true after init() completes (success or failure) */
+    @Volatile
+    var initialized = false
+        private set
+
     val isAvailable: Boolean
-        get() = nativeHandle != 0L && nativeIsAvailable(nativeHandle)
+        get() = initialized && nativeHandle != 0L && nativeIsAvailable(nativeHandle)
 
     fun init(context: Context) {
         try {
@@ -25,6 +30,7 @@ class VulkanGpuEngine(private val logger: LogManager) {
                 return
             }
             nativeHandle = nativeInit(shaderDataMap)
+            initialized = true
             if (nativeHandle != 0L) {
                 logger.i(TAG, "Vulkan GPU engine initialized successfully")
             } else {

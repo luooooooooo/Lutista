@@ -32,6 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cn.alittlecookie.lutista.data.repository.FilterRepository
+import cn.alittlecookie.lutista.data.repository.WatermarkRepository
 import org.koin.compose.koinInject
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
@@ -57,6 +58,7 @@ fun HomeScreen(
     launchPicker: () -> Unit = {}
 ) {
     val filterRepository: FilterRepository = koinInject()
+    val watermarkRepository: WatermarkRepository = koinInject()
 
     var isMonitorRunning by remember { mutableStateOf(false) }
     var isCameraMode by remember { mutableStateOf(false) }
@@ -76,12 +78,14 @@ fun HomeScreen(
         }
     }
 
-    val watermarkOptions = listOf(
-        DropdownItem(text = "无水印"),
-        DropdownItem(text = "默认边框"),
-        DropdownItem(text = "白色边框"),
-        DropdownItem(text = "黑色边框")
-    )
+    val watermarksFromDb by watermarkRepository.getAllWatermarks().collectAsState(initial = emptyList())
+
+    val watermarkOptions = remember(watermarksFromDb) {
+        buildList {
+            add(DropdownItem(text = "无水印"))
+            addAll(watermarksFromDb.map { DropdownItem(text = it.name) })
+        }
+    }
 
     LazyColumn(
         modifier = modifier

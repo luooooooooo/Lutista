@@ -238,20 +238,30 @@ class OutputRenderer(private val bitmapCache: BitmapCache) {
         converter: UnitConverter,
         parentOpacity: Float
     ) {
-        val bounds = layout.elementBounds[element.id] ?: return
+        val bounds = layout.elementBounds[element.id]
+        if (bounds == null) {
+            android.util.Log.w("OutputRenderer", "drawElement: MISSING bounds for ${element.id} (${element::class.simpleName})")
+            return
+        }
         val opacity = element.opacity * parentOpacity
 
-        canvas.save()
-        canvas.translate(bounds.x, bounds.y)
+        android.util.Log.d("OutputRenderer", "drawElement: id=${element.id}, type=${element::class.simpleName}, pos=(${bounds.x},${bounds.y}), size=${bounds.width}x${bounds.height}, opacity=$opacity")
 
+        canvas.save()
         when (element) {
-            is TextElement -> drawText(canvas, element, bounds, converter, opacity)
-            is ImageElement -> drawImage(canvas, element, bounds, opacity)
+            is TextElement -> {
+                canvas.translate(bounds.x, bounds.y)
+                drawText(canvas, element, bounds, converter, opacity)
+            }
+            is ImageElement -> {
+                canvas.translate(bounds.x, bounds.y)
+                drawImage(canvas, element, bounds, opacity)
+            }
             is ContainerElement -> {
+                android.util.Log.d("OutputRenderer", "  container: id=${element.id}, children=${element.children.size}")
                 element.children.forEach { drawElement(canvas, it, layout, converter, opacity) }
             }
         }
-
         canvas.restore()
     }
 
@@ -295,9 +305,10 @@ class OutputRenderer(private val bitmapCache: BitmapCache) {
         opacity: Float
     ) {
         val uri = element.imageUri
+        if (uri.isEmpty()) return
         val bitmap = bitmapCache.get(uri, bounds.width.toInt(), bounds.height.toInt())
         val paint = Paint().apply { alpha = (opacity * 255).toInt() }
-        canvas.drawBitmap(bitmap, 0f, 0f, paint)
+        canvas.drawBitmap(bitmap, null, Rect(0, 0, bounds.width.toInt(), bounds.height.toInt()), paint)
         bitmapCache.release(uri, bounds.width.toInt(), bounds.height.toInt())
     }
 

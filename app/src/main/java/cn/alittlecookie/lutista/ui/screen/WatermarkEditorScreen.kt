@@ -98,12 +98,13 @@ import top.yukonga.miuix.kmp.basic.rememberTopAppBarState
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Add
 import top.yukonga.miuix.kmp.icon.extended.Back
+import top.yukonga.miuix.kmp.icon.extended.Backup
 import top.yukonga.miuix.kmp.icon.extended.Delete
 import top.yukonga.miuix.kmp.icon.extended.Edit
-import top.yukonga.miuix.kmp.icon.extended.Filter
 import top.yukonga.miuix.kmp.icon.extended.Forward
 import top.yukonga.miuix.kmp.icon.extended.Image
 import top.yukonga.miuix.kmp.icon.extended.More
+import top.yukonga.miuix.kmp.icon.extended.Reset
 import top.yukonga.miuix.kmp.icon.extended.Sort
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.overlay.OverlayListPopup
@@ -244,36 +245,39 @@ fun WatermarkEditorScreen(
                 modifier = Modifier.fillMaxWidth().weight(0.4f).padding(horizontal = 16.dp, vertical = 8.dp)
             )
 
-            if (state.navigationStack.isNotEmpty()) {
-                NavigationBreadcrumb(
-                    containerId = state.navigationStack.last(), state = state,
-                    onBack = { state.navigateBack() }
-                )
-            }
+            // Bottom area: breadcrumb + content, fixed 60% ratio
+            Column(modifier = Modifier.fillMaxWidth().weight(0.6f)) {
+                if (state.navigationStack.isNotEmpty()) {
+                    NavigationBreadcrumb(
+                        containerId = state.navigationStack.last(), state = state,
+                        onBack = { state.navigateBack() }
+                    )
+                }
 
-            val selectedElement = state.selectedElementId?.let { state.findElementById(it) }
-            val isBaseImageSelected = state.selectedElementId == "__baseImage__"
+                val selectedElement = state.selectedElementId?.let { state.findElementById(it) }
+                val isBaseImageSelected = state.selectedElementId == "__baseImage__"
 
-            if (selectedElement != null && selectedElement is ContainerElement) {
-                ContainerPropertyEditor(selectedElement, state,
-                    modifier = Modifier.fillMaxWidth().weight(0.6f))
-            } else if (selectedElement != null && !isBaseImageSelected) {
-                PropertyEditor(selectedElement, state,
-                    onPickImage = { elementId ->
-                        pendingImageElementId = elementId
-                        imageElementPicker.launch(arrayOf("image/*"))
-                    },
-                    onPickFont = { elementId ->
-                        pendingFontElementId = elementId
-                        fontPicker.launch(arrayOf("font/*", "application/*"))
-                    },
-                    modifier = Modifier.fillMaxWidth().weight(0.6f))
-            } else if (isBaseImageSelected) {
-                BaseImageEditor(state,
-                    modifier = Modifier.fillMaxWidth().weight(0.6f))
-            } else {
-                NodeTree(state = state,
-                    modifier = Modifier.fillMaxWidth().weight(0.6f))
+                if (selectedElement != null && selectedElement is ContainerElement) {
+                    ContainerPropertyEditor(selectedElement, state,
+                        modifier = Modifier.fillMaxSize())
+                } else if (selectedElement != null && !isBaseImageSelected) {
+                    PropertyEditor(selectedElement, state,
+                        onPickImage = { elementId ->
+                            pendingImageElementId = elementId
+                            imageElementPicker.launch(arrayOf("image/*"))
+                        },
+                        onPickFont = { elementId ->
+                            pendingFontElementId = elementId
+                            fontPicker.launch(arrayOf("font/*", "application/*"))
+                        },
+                        modifier = Modifier.fillMaxSize())
+                } else if (isBaseImageSelected) {
+                    BaseImageEditor(state,
+                        modifier = Modifier.fillMaxSize())
+                } else {
+                    NodeTree(state = state,
+                        modifier = Modifier.fillMaxSize())
+                }
             }
         }
     }
@@ -400,7 +404,11 @@ private fun DrawScope.drawElementRecursive(
     scaleToFit: Float, parentOpacity: Float,
     state: WatermarkEditorViewModel, appCtx: android.content.Context
 ) {
-    val bounds = layout.elementBounds[element.id] ?: return
+    val bounds = layout.elementBounds[element.id]
+    if (bounds == null) {
+        android.util.Log.w("PreviewCanvas", "drawElementRecursive: MISSING bounds for ${element.id} (${element::class.simpleName})")
+        return
+    }
     val opacity = element.opacity * parentOpacity
 
     when (element) {
@@ -470,7 +478,7 @@ private fun NavigationBreadcrumb(
                 tint = MiuixTheme.colorScheme.primary)
         }
         Spacer(modifier = Modifier.width(4.dp))
-        Text(container.id, fontSize = 14.sp, fontWeight = FontWeight.Medium,
+        Text(state.getDisplayName(container), fontSize = 14.sp, fontWeight = FontWeight.Medium,
             color = MiuixTheme.colorScheme.primary)
     }
 }
@@ -511,35 +519,36 @@ private fun NodeTree(
             }
             item {
                 Spacer(modifier = Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                        .clickable { showAddMenu = true }.padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Icon(MiuixIcons.Add, "添加", tint = MiuixTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("添加", fontSize = 14.sp, color = MiuixTheme.colorScheme.primary)
+                Box {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                            .clickable { showAddMenu = true }.padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(MiuixIcons.Add, "添加", tint = MiuixTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("添加", fontSize = 14.sp, color = MiuixTheme.colorScheme.primary)
+                    }
+                    OverlayListPopup(
+                        show = showAddMenu, onDismissRequest = { showAddMenu = false },
+                        alignment = PopupPositionProvider.Align.End
+                    ) {
+                        ListPopupColumn {
+                            DropdownImpl("添加文字", optionSize = 3, isSelected = false, index = 0,
+                                dropdownColors = DropdownDefaults.dropdownColors(),
+                                onSelectedIndexChange = { showAddMenu = false; state.addTextElement() })
+                            DropdownImpl("添加图片", optionSize = 3, isSelected = false, index = 1,
+                                dropdownColors = DropdownDefaults.dropdownColors(),
+                                onSelectedIndexChange = { showAddMenu = false; state.addImageElement() })
+                            DropdownImpl("添加容器", optionSize = 3, isSelected = false, index = 2,
+                                dropdownColors = DropdownDefaults.dropdownColors(),
+                                onSelectedIndexChange = { showAddMenu = false; state.addContainerElement() })
+                        }
+                    }
                 }
             }
             item { Spacer(modifier = Modifier.height(16.dp)) }
-        }
-
-        OverlayListPopup(
-            show = showAddMenu, onDismissRequest = { showAddMenu = false },
-            alignment = PopupPositionProvider.Align.End
-        ) {
-            ListPopupColumn {
-                DropdownImpl("添加文字", optionSize = 3, isSelected = false, index = 0,
-                    dropdownColors = DropdownDefaults.dropdownColors(),
-                    onSelectedIndexChange = { showAddMenu = false; state.addTextElement() })
-                DropdownImpl("添加图片", optionSize = 3, isSelected = false, index = 1,
-                    dropdownColors = DropdownDefaults.dropdownColors(),
-                    onSelectedIndexChange = { showAddMenu = false; state.addImageElement() })
-                DropdownImpl("添加容器", optionSize = 3, isSelected = false, index = 2,
-                    dropdownColors = DropdownDefaults.dropdownColors(),
-                    onSelectedIndexChange = { showAddMenu = false; state.addContainerElement() })
-            }
         }
     }
 }
@@ -575,11 +584,11 @@ private fun NodeTreeItem(
             Spacer(modifier = Modifier.width(8.dp))
 
             val (label, icon) = when (element) {
+                is ContainerElement -> Pair(state.getDisplayName(element), MiuixIcons.Backup)
                 is TextElement -> Pair(element.content.take(10).ifEmpty { "文字" }, MiuixIcons.Edit)
-                is ImageElement -> Pair("图片", MiuixIcons.Image)
-                is ContainerElement -> Pair("容器", MiuixIcons.Filter)
+                is ImageElement -> Pair(element.imageUri.substringAfterLast('/').ifEmpty { "图片" }, MiuixIcons.Image)
             }
-            Icon(icon, null, tint = MiuixTheme.colorScheme.onSurfaceVariantActions, modifier = Modifier.size(20.dp))
+            Icon(icon, null, tint = MiuixTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
             Spacer(modifier = Modifier.width(12.dp))
             Text(label, fontSize = 14.sp, color = MiuixTheme.colorScheme.onSurface,
                 maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f)
@@ -590,9 +599,9 @@ private fun NodeTreeItem(
                         }
                     })
             if (element is ContainerElement) {
-                Icon(MiuixIcons.Forward, "进入", tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(8.dp))
+//                Icon(MiuixIcons.Forward, "进入", tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+//                    modifier = Modifier.size(18.dp))
+//                Spacer(modifier = Modifier.width(8.dp))
                 IconButton(
                     onClick = { state.selectElement(element.id) },
                     modifier = Modifier.size(32.dp)
@@ -618,10 +627,10 @@ private fun BaseImageEntry(state: WatermarkEditorViewModel) {
                 .padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(MiuixIcons.Image, null, tint = MiuixTheme.colorScheme.onSurfaceVariantActions,
+            Icon(MiuixIcons.Image, null, tint = MiuixTheme.colorScheme.primary,
                 modifier = Modifier.size(20.dp))
             Spacer(modifier = Modifier.width(12.dp))
-            Text("底图", fontSize = 14.sp, color = MiuixTheme.colorScheme.onSurface,
+            Text("底图-边框", fontSize = 14.sp, color = MiuixTheme.colorScheme.onSurface,
                 modifier = Modifier.weight(1f))
             IconButton(onClick = { state.selectElement("__baseImage__") }, modifier = Modifier.size(32.dp)) {
                 Icon(MiuixIcons.Edit, "编辑", tint = MiuixTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
@@ -682,7 +691,6 @@ private fun TextPropertyContent(
     }
 
     // 2. 字号
-    SectionTitle("字号")
     var fontSize by remember(element.fontSize) { mutableFloatStateOf(element.fontSize) }
     SliderWithValue(label = "字号 (gm)", value = fontSize, onValueChange = { fontSize = it },
         onValueChangeFinished = { state.updateTextElement(element.id) { it.copy(fontSize = fontSize) } },
@@ -729,7 +737,6 @@ private fun TextPropertyContent(
     )
 
     // 5. 透明度
-    SectionTitle("透明度")
     var opacity by remember(element.opacity) { mutableFloatStateOf(element.opacity * 100f) }
     SliderWithValue(label = "不透明度", value = opacity, onValueChange = { opacity = it },
         onValueChangeFinished = { state.updateTextElement(element.id) { it.copy(opacity = opacity / 100f) } },
@@ -775,14 +782,15 @@ private fun ImagePropertyContent(element: ImageElement, state: WatermarkEditorVi
             verticalAlignment = Alignment.CenterVertically) {
             Icon(MiuixIcons.Image, null, tint = MiuixTheme.colorScheme.onSurfaceVariantActions, modifier = Modifier.size(20.dp))
             Spacer(modifier = Modifier.width(8.dp))
-            Text(if (element.imageUri.isEmpty()) "点击选择图片" else "已选择", fontSize = 14.sp,
-                color = MiuixTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
+            Text(if (element.imageUri.isEmpty()) "点击选择图片" else element.imageUri.substringAfterLast('/'), fontSize = 14.sp,
+                color = MiuixTheme.colorScheme.onSurface, modifier = Modifier.weight(1f),
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
             Icon(MiuixIcons.Forward, null, tint = MiuixTheme.colorScheme.onSurfaceVariantSummary, modifier = Modifier.size(16.dp))
         }
     }
 
     // 2. 图片大小相关
-    SectionTitle("图片大小")
+    SectionTitle("图片大小基准")
     val sizeRefs = listOf("宽度", "高度", "对角线")
     Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -797,6 +805,8 @@ private fun ImagePropertyContent(element: ImageElement, state: WatermarkEditorVi
             }
         }
     }
+
+    Spacer(Modifier.size(4.dp))
 
     var size by remember(element.width) { mutableFloatStateOf(element.width ?: 20f) }
     SliderWithValue(label = "大小 (gm)", value = size, onValueChange = { size = it },
@@ -906,8 +916,7 @@ private fun ContainerPropertyEditor(
             }
         }
 
-        SectionTitle("尺寸")
-        // Width mode
+        // 1. 宽度
         Text("宽度", fontSize = 13.sp, color = MiuixTheme.colorScheme.onSurface,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
@@ -931,9 +940,10 @@ private fun ContainerPropertyEditor(
         }
 
         Spacer(modifier = Modifier.height(8.dp))
+
+        // 2. 高度
         Text("高度", fontSize = 13.sp, color = MiuixTheme.colorScheme.onSurface,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
-        // Height mode
         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf(SizeMode.WRAP_CONTENT, SizeMode.FIXED).forEach { mode ->
@@ -954,7 +964,8 @@ private fun ContainerPropertyEditor(
                 valueRange = 1f..200f, valueFormatter = { "%.1f".format(it) })
         }
 
-        SectionTitle("通用属性")
+        // 3. 锚点
+        SectionTitle("锚点")
         AnchorSelector(
             currentAnchor = container.anchor,
             onAnchorChange = { anchor ->
@@ -962,28 +973,8 @@ private fun ContainerPropertyEditor(
             }
         )
 
-        SectionTitle("外边距 (gm)")
-        MarginEditor(
-            margin = container.margin,
-            onMarginChange = { newMargin ->
-                state.updateContainerElement(container.id) { it.copy(margin = newMargin) }
-            }
-        )
-
-        SectionTitle("内边距 (gm)")
-        PaddingEditor(
-            padding = container.padding,
-            onPaddingChange = { newPadding ->
-                state.updateContainerElement(container.id) { it.copy(padding = newPadding) }
-            }
-        )
-
-        var opacity by remember(container.opacity) { mutableFloatStateOf(container.opacity * 100f) }
-        SliderWithValue(label = "不透明度", value = opacity, onValueChange = { opacity = it },
-            onValueChangeFinished = { state.updateContainerElement(container.id) { it.copy(opacity = opacity / 100f) } },
-            valueRange = 0f..100f, valueFormatter = { "%.0f%%".format(it) })
-
-        SectionTitle("排列方式")
+        // 4. 内部元素排列方式
+        SectionTitle("内部元素排列方式")
         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf(ContainerMode.LINEAR_H, ContainerMode.LINEAR_V, ContainerMode.FREE).forEach { mode ->
@@ -998,6 +989,7 @@ private fun ContainerPropertyEditor(
             }
         }
 
+        // 5. 主轴对齐
         SectionTitle("主轴对齐")
         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -1013,6 +1005,7 @@ private fun ContainerPropertyEditor(
             }
         }
 
+        // 6. 交叉轴对齐
         SectionTitle("交叉轴对齐")
         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -1027,6 +1020,32 @@ private fun ContainerPropertyEditor(
                 }
             }
         }
+
+        Spacer(Modifier.size(4.dp))
+
+        // 7. 不透明度
+        var opacity by remember(container.opacity) { mutableFloatStateOf(container.opacity * 100f) }
+        SliderWithValue(label = "不透明度", value = opacity, onValueChange = { opacity = it },
+            onValueChangeFinished = { state.updateContainerElement(container.id) { it.copy(opacity = opacity / 100f) } },
+            valueRange = 0f..100f, valueFormatter = { "%.0f%%".format(it) })
+
+        // 8. 内边距
+        SectionTitle("内边距 (gm)")
+        PaddingEditor(
+            padding = container.padding,
+            onPaddingChange = { newPadding ->
+                state.updateContainerElement(container.id) { it.copy(padding = newPadding) }
+            }
+        )
+
+        // 9. 外边距
+        SectionTitle("外边距 (gm)")
+        MarginEditor(
+            margin = container.margin,
+            onMarginChange = { newMargin ->
+                state.updateContainerElement(container.id) { it.copy(margin = newMargin) }
+            }
+        )
         Spacer(modifier = Modifier.height(16.dp))
     }
 }
@@ -1038,32 +1057,35 @@ private fun AnchorSelector(currentAnchor: Anchor?, onAnchorChange: (Anchor?) -> 
         listOf(Anchor.ML, Anchor.MC, Anchor.MR),
         listOf(Anchor.BL, Anchor.BC, Anchor.BR)
     )
-    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), cornerRadius = 12.dp) {
-        Column(modifier = Modifier.fillMaxWidth().padding(12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("锚点位置", fontSize = 13.sp,
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                modifier = Modifier.padding(bottom = 8.dp))
-            anchors.forEach { row ->
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    row.forEach { anchor ->
-                        val sel = currentAnchor == anchor
-                        Box(modifier = Modifier.size(44.dp, 36.dp).clip(RoundedCornerShape(6.dp))
-                            .background(if (sel) MiuixTheme.colorScheme.primary.copy(alpha = 0.15f) else MiuixTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                            .clickable { onAnchorChange(anchor) }, contentAlignment = Alignment.Center) {
-                            Text(anchor.name, fontSize = 12.sp,
-                                fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal,
-                                color = if (sel) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurfaceVariantSummary)
+    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 0.dp), cornerRadius = 12.dp) {
+        Box(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                anchors.forEach { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        row.forEach { anchor ->
+                            val sel = currentAnchor == anchor
+                            Box(modifier = Modifier.size(44.dp, 36.dp).clip(RoundedCornerShape(6.dp))
+                                .background(if (sel) MiuixTheme.colorScheme.primary.copy(alpha = 0.15f) else MiuixTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                .clickable { onAnchorChange(anchor) }, contentAlignment = Alignment.Center) {
+                                Text(anchor.name, fontSize = 12.sp,
+                                    fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (sel) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurfaceVariantSummary)
+                            }
                         }
                     }
                 }
             }
             if (currentAnchor != null) {
-                Spacer(modifier = Modifier.height(6.dp))
-                Button(onClick = { onAnchorChange(null) },
-                    colors = ButtonDefaults.buttonColors(color = MiuixTheme.colorScheme.surfaceVariant),
-                    modifier = Modifier.height(28.dp)) {
-                    Text("清除锚点", fontSize = 11.sp, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+                IconButton(
+                    onClick = { onAnchorChange(null) },
+                    modifier = Modifier.align(Alignment.TopEnd).size(28.dp)
+                ) {
+                    Icon(MiuixIcons.Reset, "清除锚点",
+                        tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        modifier = Modifier.size(16.dp))
                 }
             }
         }
@@ -1073,37 +1095,37 @@ private fun AnchorSelector(currentAnchor: Anchor?, onAnchorChange: (Anchor?) -> 
 @Composable
 private fun MarginEditor(margin: Margin, onMarginChange: (Margin) -> Unit) {
     var top by remember(margin) { mutableFloatStateOf(margin.top) }
-    var right by remember(margin) { mutableFloatStateOf(margin.right) }
     var bottom by remember(margin) { mutableFloatStateOf(margin.bottom) }
     var left by remember(margin) { mutableFloatStateOf(margin.left) }
+    var right by remember(margin) { mutableFloatStateOf(margin.right) }
 
     MarginSlider("上", top, { top = it }) { onMarginChange(Margin(top, right, bottom, left)) }
-    MarginSlider("右", right, { right = it }) { onMarginChange(Margin(top, right, bottom, left)) }
     MarginSlider("下", bottom, { bottom = it }) { onMarginChange(Margin(top, right, bottom, left)) }
     MarginSlider("左", left, { left = it }) { onMarginChange(Margin(top, right, bottom, left)) }
+    MarginSlider("右", right, { right = it }) { onMarginChange(Margin(top, right, bottom, left)) }
 }
 
 @Composable
 private fun PaddingEditor(padding: Padding, onPaddingChange: (Padding) -> Unit) {
     var top by remember(padding) { mutableFloatStateOf(padding.top) }
-    var right by remember(padding) { mutableFloatStateOf(padding.right) }
     var bottom by remember(padding) { mutableFloatStateOf(padding.bottom) }
     var left by remember(padding) { mutableFloatStateOf(padding.left) }
+    var right by remember(padding) { mutableFloatStateOf(padding.right) }
 
     PaddingSlider("上", top, { top = it }) { onPaddingChange(Padding(top, right, bottom, left)) }
-    PaddingSlider("右", right, { right = it }) { onPaddingChange(Padding(top, right, bottom, left)) }
     PaddingSlider("下", bottom, { bottom = it }) { onPaddingChange(Padding(top, right, bottom, left)) }
     PaddingSlider("左", left, { left = it }) { onPaddingChange(Padding(top, right, bottom, left)) }
+    PaddingSlider("右", right, { right = it }) { onPaddingChange(Padding(top, right, bottom, left)) }
 }
 
 @Composable
 private fun PaddingSlider(label: String, value: Float, onValueChange: (Float) -> Unit, onValueChangeFinished: () -> Unit) {
     Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically) {
-        Text(label, fontSize = 13.sp, color = MiuixTheme.colorScheme.onSurface, modifier = Modifier.width(20.dp))
+        Text(label, fontSize = 14.sp, color = MiuixTheme.colorScheme.onSurface, modifier = Modifier.padding(end = 4.dp))
         Slider(value = value, onValueChange = onValueChange, onValueChangeFinished = onValueChangeFinished,
             valueRange = 0f..50f, modifier = Modifier.weight(1f))
-        Text("%.1f".format(value), fontSize = 12.sp, color = MiuixTheme.colorScheme.primary, modifier = Modifier.width(36.dp))
+        Text("%.1f".format(value), fontSize = 14.sp, color = MiuixTheme.colorScheme.primary, modifier = Modifier.padding(start = 4.dp))
     }
 }
 
@@ -1111,10 +1133,10 @@ private fun PaddingSlider(label: String, value: Float, onValueChange: (Float) ->
 private fun MarginSlider(label: String, value: Float, onValueChange: (Float) -> Unit, onValueChangeFinished: () -> Unit) {
     Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically) {
-        Text(label, fontSize = 13.sp, color = MiuixTheme.colorScheme.onSurface, modifier = Modifier.width(20.dp))
+        Text(label, fontSize = 14.sp, color = MiuixTheme.colorScheme.onSurface, modifier = Modifier.padding(end = 4.dp))
         Slider(value = value, onValueChange = onValueChange, onValueChangeFinished = onValueChangeFinished,
             valueRange = 0f..50f, modifier = Modifier.weight(1f))
-        Text("%.1f".format(value), fontSize = 12.sp, color = MiuixTheme.colorScheme.primary, modifier = Modifier.width(36.dp))
+        Text("%.1f".format(value), fontSize = 14.sp, color = MiuixTheme.colorScheme.primary, modifier = Modifier.padding(start = 4.dp))
     }
 }
 
@@ -1221,10 +1243,10 @@ private fun SliderWithValue(
     valueFormatter: (Float) -> String = { "%.0f".format(it) }
 ) {
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
-        Row(modifier = Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, bottom = 2.dp),
+        Row(modifier = Modifier.fillMaxWidth().padding(start = 0.dp, end = 0.dp, bottom = 2.dp),
             horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(label, fontSize = 13.sp, color = MiuixTheme.colorScheme.onSurface)
-            Text(valueFormatter(value), fontSize = 13.sp, color = MiuixTheme.colorScheme.primary)
+            Text(label, fontSize = 14.sp, color = MiuixTheme.colorScheme.onSurface)
+            Text(valueFormatter(value), fontSize = 14.sp, color = MiuixTheme.colorScheme.primary)
         }
         Slider(value = value, onValueChange = onValueChange, onValueChangeFinished = onValueChangeFinished,
             valueRange = valueRange)

@@ -570,7 +570,7 @@ private fun SliderWithValue(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 8.dp, end = 8.dp, top = 0.dp, bottom = 4.dp),
+                .padding(start = 0.dp, end = 0.dp, top = 0.dp, bottom = 4.dp),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(

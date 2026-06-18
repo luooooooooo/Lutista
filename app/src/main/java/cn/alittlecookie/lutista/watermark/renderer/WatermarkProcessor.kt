@@ -19,6 +19,11 @@ class WatermarkProcessor(private val bitmapCache: BitmapCache) {
         val canvasW = layout.canvasWidth
         val canvasH = layout.canvasHeight
 
+        android.util.Log.d("WatermarkProc", "applyWatermark: input=${input.width}x${input.height}, canvas=${canvasW}x${canvasH}, elements=${scene.elements.size}, bounds=${layout.elementBounds.size}")
+        scene.elements.forEach { el ->
+            android.util.Log.d("WatermarkProc", "  element: id=${el.id}, type=${el::class.simpleName}")
+        }
+
         val output = Bitmap.createBitmap(canvasW, canvasH, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(output)
 
@@ -32,6 +37,7 @@ class WatermarkProcessor(private val bitmapCache: BitmapCache) {
 
         val renderer = OutputRenderer(bitmapCache)
         scene.elements.asReversed().forEach { element ->
+            android.util.Log.d("WatermarkProc", "  drawing: id=${element.id}, hasBounds=${layout.elementBounds.containsKey(element.id)}")
             renderer.drawElementOnCanvas(canvas, element, layout, converter, 1f)
         }
 

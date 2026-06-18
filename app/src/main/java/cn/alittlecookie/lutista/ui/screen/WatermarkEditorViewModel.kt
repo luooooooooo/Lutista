@@ -274,6 +274,39 @@ class WatermarkEditorViewModel(
         return find(scene.elements)
     }
 
+    fun getDisplayName(element: Element): String {
+        if (element !is ContainerElement) {
+            return when (element) {
+                is TextElement -> element.content.take(10).ifEmpty { "文字" }
+                is ImageElement -> element.imageUri.substringAfterLast('/').ifEmpty { "图片" }
+                else -> "元素"
+            }
+        }
+        val modePrefix = when (element.mode) {
+            ContainerMode.LINEAR_H -> "横排容器"
+            ContainerMode.LINEAR_V -> "竖排容器"
+            ContainerMode.FREE -> "自由容器"
+        }
+        val path = findReversePath(element.id)
+        if (path.isEmpty()) return modePrefix
+        return "$modePrefix ${path.joinToString("-")}"
+    }
+
+    private fun findReversePath(id: String): List<Int> {
+        fun resolve(list: List<Element>, acc: List<Int>): List<Int>? {
+            val n = list.size
+            list.forEachIndexed { index, el ->
+                val rev = n - index
+                if (el.id == id) return acc + rev
+                if (el is ContainerElement) {
+                    resolve(el.children, acc + rev)?.let { return it }
+                }
+            }
+            return null
+        }
+        return resolve(scene.elements, emptyList()) ?: emptyList()
+    }
+
     fun findParentOf(id: String): ContainerElement? {
         fun findParent(list: List<Element>, parent: ContainerElement?): ContainerElement? {
             for (el in list) {
@@ -311,17 +344,22 @@ class WatermarkEditorViewModel(
     private fun addElementToList(element: Element) {
         val currentContainerId = navigationStack.lastOrNull()
         val newScene = if (currentContainerId != null) {
-            val newElements = scene.elements.map { el ->
-                if (el.id == currentContainerId && el is ContainerElement) {
-                    el.copy(children = listOf(element) + el.children)
-                } else el
-            }
-            scene.copy(elements = newElements)
+            scene.copy(elements = addToContainer(scene.elements, currentContainerId, element))
         } else {
             scene.copy(elements = listOf(element) + scene.elements)
         }
         applyNewScene(newScene)
         selectedElementId = element.id
+    }
+
+    private fun addToContainer(list: List<Element>, containerId: String, newElement: Element): List<Element> {
+        return list.map { el ->
+            if (el.id == containerId && el is ContainerElement) {
+                el.copy(children = listOf(newElement) + el.children)
+            } else if (el is ContainerElement) {
+                el.copy(children = addToContainer(el.children, containerId, newElement))
+            } else el
+        }
     }
 
     fun deleteElement(elementId: String) {

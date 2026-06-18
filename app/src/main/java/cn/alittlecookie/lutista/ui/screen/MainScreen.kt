@@ -49,8 +49,11 @@ fun MainScreen() {
     var editingWatermarkId by remember { mutableStateOf(0L) }
     var returnToRecipeTab by remember { mutableStateOf(false) }
 
-    // Check Vulkan availability on first composition
+    // Wait for Vulkan init to complete, then check availability
     LaunchedEffect(Unit) {
+        while (!vulkanGpuEngine.initialized) {
+            kotlinx.coroutines.delay(100)
+        }
         if (!vulkanGpuEngine.isAvailable) {
             showVulkanDialog = true
         }

@@ -12,6 +12,7 @@ import cn.alittlecookie.lutista.watermark.model.ElementLayoutInfo
 import cn.alittlecookie.lutista.watermark.model.ImageElement
 import cn.alittlecookie.lutista.watermark.model.LayoutResult
 import cn.alittlecookie.lutista.watermark.model.MainAxisAlign
+import cn.alittlecookie.lutista.watermark.model.MarginPx
 import cn.alittlecookie.lutista.watermark.model.Offset
 import cn.alittlecookie.lutista.watermark.model.Scene
 import cn.alittlecookie.lutista.watermark.model.Size
@@ -35,13 +36,19 @@ class LayoutEngine(private val converter: UnitConverter) {
 
         val bounds = mutableMapOf<String, ElementBounds>()
 
-        // Root elements reference full canvas (incl. borders) per spec 5.2
         val rootOrigin = Offset(0f, 0f)
         val rootSize = Size(canvasW.toFloat(), canvasH.toFloat())
         val rootConstraint = Constraint(maxWidth = rootSize.width, maxHeight = rootSize.height)
 
+        android.util.Log.d("LayoutEngine", "=== Layout Start: canvas=${canvasW}x${canvasH}, image=${converter.imageWidth}x${converter.imageHeight}, border=(${borderPx.left},${borderPx.top},${borderPx.right},${borderPx.bottom})")
+
         scene.elements.forEach { el ->
             layoutElement(el, rootOrigin, rootSize, rootConstraint, bounds)
+        }
+
+        android.util.Log.d("LayoutEngine", "=== Layout Complete: ${bounds.size} elements in results")
+        bounds.forEach { (id, b) ->
+            android.util.Log.d("LayoutEngine", "  [$id] pos=(${b.x},${b.y}) size=${b.width}x${b.height} margin=(${b.marginLeft},${b.marginTop},${b.marginRight},${b.marginBottom}) total=(${b.totalX},${b.totalY})")
         }
 
         return LayoutResult(canvasW.toInt(), canvasH.toInt(), bounds)
@@ -61,7 +68,7 @@ class LayoutEngine(private val converter: UnitConverter) {
             contentSize.height + marginPx.top + marginPx.bottom
         )
 
-        val position = calculatePosition(element, parentOrigin, parentSize, contentSize)
+        val position = calculatePosition(element, parentOrigin, parentSize, contentSize, marginPx)
 
         bounds[element.id] = ElementBounds(
             x = position.x,
@@ -377,22 +384,26 @@ class LayoutEngine(private val converter: UnitConverter) {
         element: Element,
         parentOrigin: Offset,
         parentSize: Size,
-        contentSize: Size
+        contentSize: Size,
+        margin: MarginPx
     ): Offset {
         val anchor = element.anchor ?: Anchor.TL
         val offsetXPx = converter.gmToPx(element.offsetX ?: 0f)
         val offsetYPx = converter.gmToPx(element.offsetY ?: 0f)
+        // Use total element size (content + margin) for anchoring, per Android View model
+        val totalW = contentSize.width + margin.left + margin.right
+        val totalH = contentSize.height + margin.top + margin.bottom
 
         val x = when (anchor) {
-            Anchor.TL, Anchor.ML, Anchor.BL -> parentOrigin.x + offsetXPx
-            Anchor.TC, Anchor.MC, Anchor.BC -> parentOrigin.x + (parentSize.width - contentSize.width) / 2 + offsetXPx
-            Anchor.TR, Anchor.MR, Anchor.BR -> parentOrigin.x + parentSize.width - contentSize.width + offsetXPx
+            Anchor.TL, Anchor.ML, Anchor.BL -> parentOrigin.x + margin.left + offsetXPx
+            Anchor.TC, Anchor.MC, Anchor.BC -> parentOrigin.x + (parentSize.width - totalW) / 2 + margin.left + offsetXPx
+            Anchor.TR, Anchor.MR, Anchor.BR -> parentOrigin.x + parentSize.width - totalW + margin.left + offsetXPx
         }
 
         val y = when (anchor) {
-            Anchor.TL, Anchor.TC, Anchor.TR -> parentOrigin.y + offsetYPx
-            Anchor.ML, Anchor.MC, Anchor.MR -> parentOrigin.y + (parentSize.height - contentSize.height) / 2 + offsetYPx
-            Anchor.BL, Anchor.BC, Anchor.BR -> parentOrigin.y + parentSize.height - contentSize.height + offsetYPx
+            Anchor.TL, Anchor.TC, Anchor.TR -> parentOrigin.y + margin.top + offsetYPx
+            Anchor.ML, Anchor.MC, Anchor.MR -> parentOrigin.y + (parentSize.height - totalH) / 2 + margin.top + offsetYPx
+            Anchor.BL, Anchor.BC, Anchor.BR -> parentOrigin.y + parentSize.height - totalH + margin.top + offsetYPx
         }
 
         return Offset(x, y)
