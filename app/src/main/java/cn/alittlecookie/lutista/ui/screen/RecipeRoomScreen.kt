@@ -24,7 +24,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -113,7 +112,9 @@ fun RecipeRoomScreen(
     onEditFilter: (Long) -> Unit = {},
     onEditWatermark: (Long) -> Unit = {},
     importTrigger: Long = 0L,
-    createTrigger: Long = 0L
+    createTrigger: Long = 0L,
+    selectedSubTab: Int = 0,
+    onSubTabChange: (Int) -> Unit = {}
 ) {
     val context = LocalContext.current
     val filterRepository: FilterRepository = koinInject()
@@ -124,7 +125,6 @@ fun RecipeRoomScreen(
     val logger: LogManager = koinInject()
     val scope = rememberCoroutineScope()
 
-    var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = RecipeTab.entries.map { it.label }
 
     // Rename dialog state
@@ -188,8 +188,8 @@ fun RecipeRoomScreen(
             }
     }
 
-    val currentList = if (selectedTab == 0) filters else watermarks
-    val isWatermarkTab = selectedTab == 1
+    val currentList = if (selectedSubTab == 0) filters else watermarks
+    val isWatermarkTab = selectedSubTab == 1
 
     // Auto-increment naming helper
     fun nextAutoName(baseName: String, existingNames: List<String>): String {
@@ -209,7 +209,7 @@ fun RecipeRoomScreen(
 
     LaunchedEffect(importTrigger) {
         if (importTrigger > 0) {
-            if (selectedTab == 1) {
+            if (selectedSubTab == 1) {
                 // Watermark tab: create new watermark
                 val newId = watermarkRepository.createDefault()
                 onEditWatermark(newId)
@@ -221,7 +221,7 @@ fun RecipeRoomScreen(
 
     LaunchedEffect(createTrigger) {
         if (createTrigger > 0) {
-            if (selectedTab == 1) {
+            if (selectedSubTab == 1) {
                 val existingNames = watermarksFromDb.map { it.name }
                 val name = nextAutoName("新边框水印", existingNames)
                 scope.launch {
@@ -294,8 +294,8 @@ fun RecipeRoomScreen(
     ) {
         TabRowWithContour(
             tabs = tabs,
-            selectedTabIndex = selectedTab,
-            onTabSelected = { selectedTab = it },
+            selectedTabIndex = selectedSubTab,
+            onTabSelected = { onSubTabChange(it) },
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
         )
 
@@ -303,7 +303,7 @@ fun RecipeRoomScreen(
             items = currentList,
             isWatermarkTab = isWatermarkTab,
             onMove = { from, to ->
-                if (selectedTab == 0) {
+                if (selectedSubTab == 0) {
                     val item = filters.removeAt(from.index)
                     filters.add(to.index, item)
                 } else {
@@ -330,7 +330,7 @@ fun RecipeRoomScreen(
                 when (action) {
                     MoreAction.TOGGLE_ENABLE -> {
                         scope.launch {
-                            if (selectedTab == 0) {
+                            if (selectedSubTab == 0) {
                                 filterRepository.getFilterById(item.id)?.let {
                                     filterRepository.update(it.copy(isEnabled = !it.isEnabled))
                                 }

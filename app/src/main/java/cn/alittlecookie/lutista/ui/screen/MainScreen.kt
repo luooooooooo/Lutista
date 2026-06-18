@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -49,6 +50,7 @@ fun MainScreen() {
 
     var showVulkanDialog by remember { mutableStateOf(false) }
     var returnToRecipeTab by remember { mutableStateOf(false) }
+    var recipeSubTab by remember { mutableIntStateOf(0) }
 
     val backStack = remember { mutableStateListOf<NavKey>(Screen.Main) }
 
@@ -114,7 +116,9 @@ fun MainScreen() {
                     onEditWatermark = { watermarkId ->
                         backStack.add(Screen.WatermarkEditor(watermarkId))
                     },
-                    initialPage = if (returnToRecipeTab) { returnToRecipeTab = false; 1 } else 0
+                    initialPage = if (returnToRecipeTab) { returnToRecipeTab = false; 1 } else 0,
+                    recipeSubTab = recipeSubTab,
+                    onRecipeSubTabChange = { recipeSubTab = it }
                 )
             }
             entry<Screen.PhotoProcess> { screen ->

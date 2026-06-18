@@ -32,7 +32,9 @@ fun MainTabScreen(
     launchPicker: () -> Unit = {},
     onEditFilter: (Long) -> Unit = {},
     onEditWatermark: (Long) -> Unit = {},
-    initialPage: Int = 0
+    initialPage: Int = 0,
+    recipeSubTab: Int = 0,
+    onRecipeSubTabChange: (Int) -> Unit = {}
 ) {
     var selectedPage by rememberSaveable { mutableIntStateOf(initialPage) }
     val pages = MainPage.entries
@@ -85,7 +87,9 @@ fun MainTabScreen(
                 onEditFilter = onEditFilter,
                 onEditWatermark = onEditWatermark,
                 importTrigger = recipeImportTrigger,
-                createTrigger = recipeCreateTrigger
+                createTrigger = recipeCreateTrigger,
+                selectedSubTab = recipeSubTab,
+                onSubTabChange = onRecipeSubTabChange
             )
             2 -> SettingsScreen(
                 modifier = Modifier.padding(top = paddingValues.calculateTopPadding()),
