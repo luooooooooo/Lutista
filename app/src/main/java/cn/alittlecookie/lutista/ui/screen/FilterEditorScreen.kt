@@ -193,7 +193,7 @@ fun FilterEditorScreen(
     Scaffold(
         topBar = {
             SmallTopAppBar(
-                title = "滤镜编辑",
+                title = state.filterName.ifEmpty { "滤镜编辑" },
                 scrollBehavior = scrollBehavior,
                 navigationIcon = {
                     IconButton(onClick = {
@@ -369,7 +369,6 @@ fun FilterEditorScreen(
                 onDismissRequest = { showBackDialog = false }
             ) {
                 Column(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 0.dp, vertical = 0.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {

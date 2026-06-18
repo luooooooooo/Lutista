@@ -67,7 +67,7 @@ fun HomeScreen(
     var selectedFilterIndex by remember { mutableIntStateOf(0) }
     var selectedWatermarkIndex by remember { mutableIntStateOf(0) }
 
-    val filtersFromDb by filterRepository.getAllFilters().collectAsState(initial = emptyList())
+    val filtersFromDb by filterRepository.getEnabledFilters().collectAsState(initial = emptyList())
 
     val filterOptions = remember(filtersFromDb) {
         buildList {
@@ -78,7 +78,7 @@ fun HomeScreen(
         }
     }
 
-    val watermarksFromDb by watermarkRepository.getAllWatermarks().collectAsState(initial = emptyList())
+    val watermarksFromDb by watermarkRepository.getEnabledWatermarks().collectAsState(initial = emptyList())
 
     val watermarkOptions = remember(watermarksFromDb) {
         buildList {

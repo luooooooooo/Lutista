@@ -90,6 +90,7 @@ import top.yukonga.miuix.kmp.icon.extended.Create
 import top.yukonga.miuix.kmp.icon.extended.FavoritesFill
 import top.yukonga.miuix.kmp.icon.extended.Ok
 import top.yukonga.miuix.kmp.menu.OverlayIconCascadingDropdownMenu
+import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 data class PhotoItem(
@@ -189,7 +190,7 @@ fun PhotoProcessScreen(
         }
     }
 
-    val filtersFromDb by filterRepository.getAllFilters().collectAsState(initial = emptyList())
+    val filtersFromDb by filterRepository.getEnabledFilters().collectAsState(initial = emptyList())
 
     val filterOptions = remember(filtersFromDb) {
         buildList {
@@ -200,7 +201,7 @@ fun PhotoProcessScreen(
         }
     }
 
-    val watermarksFromDb by watermarkRepository.getAllWatermarks().collectAsState(initial = emptyList())
+    val watermarksFromDb by watermarkRepository.getEnabledWatermarks().collectAsState(initial = emptyList())
 
     val watermarkOptions = remember(watermarksFromDb) {
         buildList {
@@ -1003,59 +1004,37 @@ private fun ProcessingDialog(
     statusText: String,
     onCancel: () -> Unit
 ) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.5f)),
-        contentAlignment = Alignment.Center
+    OverlayDialog(
+        show = true,
+        onDismissRequest = onCancel
     ) {
-        Card(
-            modifier = Modifier
-                .width(280.dp)
-                .padding(40.dp),
-            cornerRadius = 24.dp
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 32.dp, vertical = 40.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+            CircularProgressIndicator(size = 56.dp)
+
+            Text(
+                text = "$processedCount / $totalPhotos",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                color = MiuixTheme.colorScheme.onSurface
+            )
+
+            Text(
+                text = statusText,
+                fontSize = 14.sp,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary
+            )
+
+            Button(
+                onClick = onCancel,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
+                    color = MiuixTheme.colorScheme.secondaryContainer
+                )
             ) {
-                Box(
-                    modifier = Modifier.fillMaxWidth(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator(
-                        size = 56.dp
-                    )
-                }
-
-                Text(
-                    text = "$processedCount / $totalPhotos",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MiuixTheme.colorScheme.onSurface
-                )
-
-                Text(
-                    text = statusText,
-                    fontSize = 14.sp,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary
-                )
-
-                Button(
-                    onClick = onCancel,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(
-                        color = MiuixTheme.colorScheme.secondaryContainer
-                    )
-                ) {
-                    Text(
-                        text = "取消处理",
-                        color = MiuixTheme.colorScheme.error
-                    )
-                }
+                Text("取消处理", color = MiuixTheme.colorScheme.error)
             }
         }
     }

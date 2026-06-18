@@ -77,7 +77,10 @@ fun MainTabScreen(
                 launchPicker = launchPicker
             )
             1 -> RecipeRoomScreen(
-                modifier = Modifier.padding(top = paddingValues.calculateTopPadding()),
+                modifier = Modifier.padding(
+                    top = paddingValues.calculateTopPadding(),
+                    bottom = paddingValues.calculateBottomPadding()
+                ),
                 scrollBehavior = scrollBehavior,
                 onEditFilter = onEditFilter,
                 onEditWatermark = onEditWatermark,

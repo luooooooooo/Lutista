@@ -9,5 +9,7 @@ data class WatermarkEntity(
     val id: Long = 0,
     val name: String,
     val configJson: String = "{}",
+    val isEnabled: Boolean = true,
+    val sortOrder: Int = 0,
     val createdAt: Long = System.currentTimeMillis()
 )

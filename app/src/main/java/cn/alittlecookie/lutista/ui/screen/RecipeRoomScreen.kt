@@ -5,7 +5,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,7 +13,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -79,6 +77,7 @@ import top.yukonga.miuix.kmp.icon.extended.Sort
 import top.yukonga.miuix.kmp.overlay.OverlayListPopup
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
+import top.yukonga.miuix.kmp.window.WindowDialog
 import java.io.File
 import java.io.FileOutputStream
 import java.util.zip.ZipInputStream
@@ -140,7 +139,7 @@ fun RecipeRoomScreen(
                 RecipeItem(
                     id = entity.id,
                     name = entity.name,
-                    isEnabled = true,
+                    isEnabled = entity.isEnabled,
                     type = RecipeTab.FILTER,
                     isBuiltIn = entity.isBuiltIn
                 )
@@ -155,7 +154,7 @@ fun RecipeRoomScreen(
                 RecipeItem(
                     id = entity.id,
                     name = entity.name,
-                    isEnabled = true,
+                    isEnabled = entity.isEnabled,
                     type = RecipeTab.WATERMARK,
                     isBuiltIn = false
                 )
@@ -281,9 +280,25 @@ fun RecipeRoomScreen(
                 if (selectedTab == 0) {
                     val item = filters.removeAt(from.index)
                     filters.add(to.index, item)
+                    scope.launch {
+                        val snapshot = filters.toList()
+                        snapshot.forEachIndexed { i, f ->
+                            filterRepository.getFilterById(f.id)?.let {
+                                filterRepository.update(it.copy(sortOrder = i))
+                            }
+                        }
+                    }
                 } else {
                     val item = watermarks.removeAt(from.index)
                     watermarks.add(to.index, item)
+                    scope.launch {
+                        val snapshot = watermarks.toList()
+                        snapshot.forEachIndexed { i, w ->
+                            watermarkRepository.getWatermarkById(w.id)?.let {
+                                watermarkRepository.update(it.copy(sortOrder = i))
+                            }
+                        }
+                    }
                 }
             },
             onEditClick = { item ->
@@ -304,12 +319,15 @@ fun RecipeRoomScreen(
             onMoreAction = { item, action ->
                 when (action) {
                     MoreAction.TOGGLE_ENABLE -> {
-                        val index = currentList.indexOf(item)
-                        if (index >= 0) {
+                        scope.launch {
                             if (selectedTab == 0) {
-                                filters[index] = item.copy(isEnabled = !item.isEnabled)
+                                filterRepository.getFilterById(item.id)?.let {
+                                    filterRepository.update(it.copy(isEnabled = !it.isEnabled))
+                                }
                             } else {
-                                watermarks[index] = item.copy(isEnabled = !item.isEnabled)
+                                watermarkRepository.getWatermarkById(item.id)?.let {
+                                    watermarkRepository.update(it.copy(isEnabled = !it.isEnabled))
+                                }
                             }
                         }
                     }
@@ -632,13 +650,13 @@ private fun RecipeListItem(
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .shadow(elevation, RoundedCornerShape(16.dp)),
-        cornerRadius = 16.dp
+            .shadow(elevation, RoundedCornerShape(12.dp)),
+        cornerRadius = 12.dp
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
@@ -661,7 +679,7 @@ private fun RecipeListItem(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = item.name,
-                        style = MiuixTheme.textStyles.body1,
+                        style = MiuixTheme.textStyles.body2,
                         color = if (item.isEnabled) {
                             MiuixTheme.colorScheme.onSurface
                         } else {
@@ -680,7 +698,7 @@ private fun RecipeListItem(
                         ) {
                             Text(
                                 text = "内置",
-                                style = MiuixTheme.textStyles.body2,
+                                style = MiuixTheme.textStyles.footnote1,
                                 color = MiuixTheme.colorScheme.primary
                             )
                         }
@@ -689,7 +707,7 @@ private fun RecipeListItem(
                 if (!item.isEnabled) {
                     Text(
                         text = "已禁用",
-                        style = MiuixTheme.textStyles.body2,
+                        style = MiuixTheme.textStyles.footnote2,
                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.5f)
                     )
                 }
@@ -799,63 +817,48 @@ fun RenameDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.5f))
-            .clickable(onClick = onDismiss),
-        contentAlignment = Alignment.Center
+    WindowDialog(
+        show = true,
+        onDismissRequest = onDismiss
     ) {
-        Card(
-            modifier = Modifier
-                .width(300.dp)
-                .clickable(enabled = false, onClick = {}),
-            cornerRadius = 24.dp
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+            Text(
+                text = "重命名",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MiuixTheme.colorScheme.onSurface
+            )
+            TextField(
+                value = currentName,
+                onValueChange = onNameChange,
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(
-                    text = "重命名滤镜",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MiuixTheme.colorScheme.onSurface
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                TextField(
-                    value = currentName,
-                    onValueChange = onNameChange,
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(
+                        color = MiuixTheme.colorScheme.secondary
+                    )
                 ) {
-                    Button(
-                        onClick = onDismiss,
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(
-                            color = MiuixTheme.colorScheme.surfaceVariant
-                        )
-                    ) {
-                        Text("取消", color = MiuixTheme.colorScheme.onSurface)
-                    }
-                    Button(
-                        onClick = onConfirm,
-                        modifier = Modifier.weight(1f),
-                        enabled = currentName.trim().isNotEmpty(),
-                        colors = ButtonDefaults.buttonColors(
-                            color = MiuixTheme.colorScheme.primary
-                        )
-                    ) {
-                        Text("确定", color = Color.White)
-                    }
+                    Text("取消", color = MiuixTheme.colorScheme.primary)
+                }
+                Button(
+                    onClick = onConfirm,
+                    modifier = Modifier.weight(1f),
+                    enabled = currentName.trim().isNotEmpty(),
+                    colors = ButtonDefaults.buttonColors(
+                        color = MiuixTheme.colorScheme.primary
+                    )
+                ) {
+                    Text("确定", color = Color.White)
                 }
             }
         }

@@ -12,8 +12,11 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface FilterDao {
 
-    @Query("SELECT * FROM filters ORDER BY updatedAt DESC")
+    @Query("SELECT * FROM filters ORDER BY sortOrder ASC, createdAt DESC")
     fun getAllFilters(): Flow<List<FilterEntity>>
+
+    @Query("SELECT * FROM filters WHERE isEnabled = 1 ORDER BY sortOrder ASC, createdAt DESC")
+    fun getEnabledFilters(): Flow<List<FilterEntity>>
 
     @Query("SELECT * FROM filters WHERE id = :id")
     suspend fun getFilterById(id: Long): FilterEntity?

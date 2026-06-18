@@ -12,8 +12,11 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface WatermarkDao {
 
-    @Query("SELECT * FROM watermarks ORDER BY createdAt DESC")
+    @Query("SELECT * FROM watermarks ORDER BY sortOrder ASC, createdAt DESC")
     fun getAllWatermarks(): Flow<List<WatermarkEntity>>
+
+    @Query("SELECT * FROM watermarks WHERE isEnabled = 1 ORDER BY sortOrder ASC, createdAt DESC")
+    fun getEnabledWatermarks(): Flow<List<WatermarkEntity>>
 
     @Query("SELECT * FROM watermarks WHERE id = :id")
     suspend fun getWatermarkById(id: Long): WatermarkEntity?

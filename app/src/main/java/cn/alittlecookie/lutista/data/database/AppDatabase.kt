@@ -17,7 +17,7 @@ import cn.alittlecookie.lutista.data.database.entity.WatermarkEntity
         WatermarkEntity::class,
         TaskEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -36,6 +36,15 @@ abstract class AppDatabase : RoomDatabase() {
         val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE filters ADD COLUMN lutGlobalStrength REAL NOT NULL DEFAULT 1.0")
+            }
+        }
+
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE filters ADD COLUMN isEnabled INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE filters ADD COLUMN sortOrder INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE watermarks ADD COLUMN isEnabled INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE watermarks ADD COLUMN sortOrder INTEGER NOT NULL DEFAULT 0")
             }
         }
     }

@@ -299,7 +299,6 @@ fun WatermarkEditorScreen(
                 onDismissRequest = { showBackDialog = false }
             ) {
                 Column(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 0.dp, vertical = 0.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
@@ -1205,7 +1204,6 @@ private fun ColorPickerButton(
             onDismissRequest = { showDialog = false }
         ) {
             Column(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 0.dp, vertical = 0.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text("选择颜色", fontSize = 18.sp, fontWeight = FontWeight.SemiBold,

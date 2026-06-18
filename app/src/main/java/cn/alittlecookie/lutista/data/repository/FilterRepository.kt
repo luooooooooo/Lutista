@@ -9,6 +9,8 @@ class FilterRepository(
 ) {
     fun getAllFilters(): Flow<List<FilterEntity>> = filterDao.getAllFilters()
 
+    fun getEnabledFilters(): Flow<List<FilterEntity>> = filterDao.getEnabledFilters()
+
     suspend fun getFilterById(id: Long): FilterEntity? = filterDao.getFilterById(id)
 
     suspend fun getFilterByName(name: String): FilterEntity? = filterDao.getFilterByName(name)

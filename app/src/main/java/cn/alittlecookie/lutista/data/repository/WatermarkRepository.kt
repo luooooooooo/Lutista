@@ -12,6 +12,8 @@ class WatermarkRepository(
 ) {
     fun getAllWatermarks(): Flow<List<WatermarkEntity>> = watermarkDao.getAllWatermarks()
 
+    fun getEnabledWatermarks(): Flow<List<WatermarkEntity>> = watermarkDao.getEnabledWatermarks()
+
     suspend fun getWatermarkById(id: Long): WatermarkEntity? = watermarkDao.getWatermarkById(id)
 
     suspend fun getWatermarkByName(name: String): WatermarkEntity? = watermarkDao.getWatermarkByName(name)

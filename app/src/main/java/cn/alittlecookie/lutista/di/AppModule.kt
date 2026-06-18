@@ -40,7 +40,7 @@ val appModule = module {
             androidContext(),
             AppDatabase::class.java,
             "Lutista.db"
-        ).addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3).build()
+        ).addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4).build()
     }
 
     // DAOs
