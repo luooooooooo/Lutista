@@ -96,7 +96,7 @@ fun MainScreen() {
         }
     }
 
-    val entryProvider = remember(backStack) {
+    val entryProvider = remember {
         entryProvider<NavKey> {
             entry(Screen.Main) {
                 MainTabScreen(

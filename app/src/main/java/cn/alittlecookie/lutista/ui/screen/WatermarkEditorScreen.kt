@@ -5,7 +5,6 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -43,7 +42,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -132,7 +130,10 @@ fun WatermarkEditorScreen(
         )
     }
 
-    LaunchedEffect(watermarkId) { state.load() }
+    LaunchedEffect(watermarkId) {
+        kotlinx.coroutines.delay(1)
+        state.load()
+    }
     DisposableEffect(Unit) { onDispose { state.release() } }
 
     var showBackDialog by remember { mutableStateOf(false) }
@@ -528,13 +529,12 @@ private fun NodeTree(
         ) {
             itemsIndexed(elements, key = { _, el -> el.id }) { index, el ->
                 ReorderableItem(reorderableState, key = el.id) { isDragging ->
-                    val elevation by animateDpAsState(if (isDragging) 8.dp else 0.dp)
                     val dragModifier = Modifier.draggableHandle(
                         onDragStarted = {}, onDragStopped = {}
                     )
                     NodeTreeItem(
                         element = el, state = state, index = index,
-                        isDragging = isDragging, elevation = elevation,
+                        isDragging = isDragging,
                         dragHandleModifier = dragModifier
                     )
                 }
@@ -582,12 +582,14 @@ private fun NodeTree(
 private fun NodeTreeItem(
     element: Element, state: WatermarkEditorViewModel,
     index: Int = 0, isDragging: Boolean = false,
-    elevation: androidx.compose.ui.unit.Dp = 0.dp,
     dragHandleModifier: Modifier = Modifier
 ) {
     Card(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-            .shadow(elevation, RoundedCornerShape(12.dp)),
+            .then(
+                if (isDragging) Modifier.border(2.dp, MiuixTheme.colorScheme.primary, RoundedCornerShape(12.dp))
+                else Modifier
+            ),
         cornerRadius = 12.dp
     ) {
         Row(

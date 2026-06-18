@@ -144,6 +144,7 @@ fun FilterEditorScreen(
 
     // 加载滤镜 & 初始化预览
     LaunchedEffect(filterId) {
+        kotlinx.coroutines.delay(1)
         state.loadFilter()
         state.initPreview()
     }

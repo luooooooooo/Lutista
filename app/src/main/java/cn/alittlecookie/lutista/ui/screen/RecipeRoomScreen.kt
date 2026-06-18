@@ -3,8 +3,8 @@ package cn.alittlecookie.lutista.ui.screen
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,9 +30,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
@@ -49,6 +49,8 @@ import cn.alittlecookie.lutista.manager.BuiltinFilterManager
 import cn.alittlecookie.lutista.manager.LogManager
 import cn.alittlecookie.lutista.watermark.model.BaseImageElement
 import cn.alittlecookie.lutista.watermark.model.Scene
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import org.json.JSONObject
@@ -160,6 +162,30 @@ fun RecipeRoomScreen(
                 )
             })
         }
+    }
+
+    // Debounced persistence: save sort order 500ms after last reorder
+    LaunchedEffect(Unit) {
+        snapshotFlow { filters.map { it.id } }
+            .collectLatest { ids ->
+                delay(600)
+                ids.forEachIndexed { i, id ->
+                    filterRepository.getFilterById(id)?.let {
+                        filterRepository.update(it.copy(sortOrder = i))
+                    }
+                }
+            }
+    }
+    LaunchedEffect(Unit) {
+        snapshotFlow { watermarks.map { it.id } }
+            .collectLatest { ids ->
+                delay(600)
+                ids.forEachIndexed { i, id ->
+                    watermarkRepository.getWatermarkById(id)?.let {
+                        watermarkRepository.update(it.copy(sortOrder = i))
+                    }
+                }
+            }
     }
 
     val currentList = if (selectedTab == 0) filters else watermarks
@@ -280,25 +306,9 @@ fun RecipeRoomScreen(
                 if (selectedTab == 0) {
                     val item = filters.removeAt(from.index)
                     filters.add(to.index, item)
-                    scope.launch {
-                        val snapshot = filters.toList()
-                        snapshot.forEachIndexed { i, f ->
-                            filterRepository.getFilterById(f.id)?.let {
-                                filterRepository.update(it.copy(sortOrder = i))
-                            }
-                        }
-                    }
                 } else {
                     val item = watermarks.removeAt(from.index)
                     watermarks.add(to.index, item)
-                    scope.launch {
-                        val snapshot = watermarks.toList()
-                        snapshot.forEachIndexed { i, w ->
-                            watermarkRepository.getWatermarkById(w.id)?.let {
-                                watermarkRepository.update(it.copy(sortOrder = i))
-                            }
-                        }
-                    }
                 }
             },
             onEditClick = { item ->
@@ -613,13 +623,10 @@ private fun RecipeList(
     ) {
         itemsIndexed(items, key = { _, item -> item.id }) { _, item ->
             ReorderableItem(reorderableState, key = item.id) { isDragging ->
-                val elevation by animateDpAsState(if (isDragging) 8.dp else 0.dp)
-
                 RecipeListItem(
                     item = item,
                     isDragging = isDragging,
                     isWatermarkTab = isWatermarkTab,
-                    elevation = elevation,
                     dragHandleModifier = Modifier.draggableHandle(
                         onDragStarted = {},
                         onDragStopped = {}
@@ -639,7 +646,6 @@ private fun RecipeListItem(
     item: RecipeItem,
     isDragging: Boolean,
     isWatermarkTab: Boolean,
-    elevation: androidx.compose.ui.unit.Dp,
     dragHandleModifier: Modifier = Modifier,
     onEditClick: () -> Unit,
     onMoreAction: (MoreAction) -> Unit,
@@ -650,7 +656,10 @@ private fun RecipeListItem(
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .shadow(elevation, RoundedCornerShape(12.dp)),
+            .then(
+                if (isDragging) Modifier.border(2.dp, MiuixTheme.colorScheme.primary, RoundedCornerShape(12.dp))
+                else Modifier
+            ),
         cornerRadius = 12.dp
     ) {
         Row(
