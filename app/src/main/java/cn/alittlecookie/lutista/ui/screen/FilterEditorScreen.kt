@@ -161,6 +161,7 @@ fun FilterEditorScreen(
     var showMoreMenu by remember { mutableStateOf(false) }
     var renameDialogVisible by remember { mutableStateOf(false) }
     var renameDialogText by remember { mutableStateOf("") }
+    var showResetDialog by remember { mutableStateOf(false) }
     var filterNameEditing by remember { mutableStateOf("") }
     var isEditingName by remember { mutableStateOf(false) }
 
@@ -258,7 +259,7 @@ fun FilterEditorScreen(
                             ListPopupColumn {
                                 DropdownImpl(
                                     text = "重命名",
-                                    optionSize = 1,
+                                    optionSize = 2,
                                     isSelected = false,
                                     index = 0,
                                     dropdownColors = DropdownDefaults.dropdownColors(),
@@ -266,6 +267,17 @@ fun FilterEditorScreen(
                                         showMoreMenu = false
                                         renameDialogVisible = true
                                         renameDialogText = state.filterName
+                                    }
+                                )
+                                DropdownImpl(
+                                    text = "恢复默认",
+                                    optionSize = 2,
+                                    isSelected = false,
+                                    index = 1,
+                                    dropdownColors = DropdownDefaults.dropdownColors(),
+                                    onSelectedIndexChange = {
+                                        showMoreMenu = false
+                                        showResetDialog = true
                                     }
                                 )
                             }
@@ -363,6 +375,40 @@ fun FilterEditorScreen(
                 },
                 onDismiss = { renameDialogVisible = false }
             )
+        }
+
+        if (showResetDialog) {
+            OverlayDialog(
+                show = showResetDialog,
+                onDismissRequest = { showResetDialog = false }
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(18.dp)
+                ) {
+                    Text("即将重置所有参数（仅保留LUT）", fontSize = 16.sp,
+                        color = MiuixTheme.colorScheme.onSurface)
+                    Row {
+                        Button(
+                            onClick = {
+                                state.resetToDefault()
+                                showResetDialog = false
+                            }, modifier = Modifier.weight(0.5f),
+                            colors = ButtonDefaults.buttonColors(color = MiuixTheme.colorScheme.secondary)
+                        ) {
+                            Text("重置", color = MiuixTheme.colorScheme.error)
+                        }
+                        Spacer(Modifier.size(8.dp))
+                        Button(
+                            onClick = { showResetDialog = false },
+                            modifier = Modifier.weight(0.5f),
+                            colors = ButtonDefaults.buttonColors(color = MiuixTheme.colorScheme.secondary)
+                        ) {
+                            Text("取消", color = MiuixTheme.colorScheme.onSurface)
+                        }
+                    }
+                }
+            }
         }
 
         if (showBackDialog) {

@@ -432,6 +432,21 @@ class FilterEditorViewModel(
         logger.d(TAG, "已丢弃所有未保存的更改")
     }
 
+    fun resetToDefault() {
+        val current = filterConfig
+        val reset = FilterConfig(
+            // 保留 LUT
+            lutPath1 = current.lutPath1,
+            lutConcentration1 = current.lutConcentration1,
+            lutPath2 = current.lutPath2,
+            lutConcentration2 = current.lutConcentration2,
+            lutPrecision = current.lutPrecision,
+            lutGlobalStrength = current.lutGlobalStrength
+        )
+        updateConfig { reset }
+        logger.d(TAG, "已恢复默认参数")
+    }
+
     // ── 资源清理 ──────────────────────────────────────────────────
 
     /**
