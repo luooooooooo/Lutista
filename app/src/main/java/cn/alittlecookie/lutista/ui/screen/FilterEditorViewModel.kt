@@ -69,8 +69,15 @@ class FilterEditorViewModel(
 
     private val undoStack = ArrayDeque<FilterConfig>(MAX_HISTORY_SIZE)
     private val redoStack = ArrayDeque<FilterConfig>(MAX_HISTORY_SIZE)
-    val canUndo: Boolean get() = undoStack.isNotEmpty()
-    val canRedo: Boolean get() = redoStack.isNotEmpty()
+    var canUndo by mutableStateOf(false)
+        private set
+    var canRedo by mutableStateOf(false)
+        private set
+
+    private fun updateUndoRedoState() {
+        canUndo = undoStack.isNotEmpty()
+        canRedo = redoStack.isNotEmpty()
+    }
 
     // ── 脏标记 ────────────────────────────────────────────────────
 
@@ -196,6 +203,7 @@ class FilterEditorViewModel(
 
         filterConfig = transform(filterConfig)
         hasChanges = true
+        updateUndoRedoState()
         triggerRenderPreview()
     }
 
@@ -253,6 +261,7 @@ class FilterEditorViewModel(
         redoStack.addLast(filterConfig)
         filterConfig = undoStack.removeLast()
         hasChanges = filterConfig != initialConfig
+        updateUndoRedoState()
         triggerRenderPreview()
     }
 
@@ -261,6 +270,7 @@ class FilterEditorViewModel(
         undoStack.addLast(filterConfig)
         filterConfig = redoStack.removeLast()
         hasChanges = filterConfig != initialConfig
+        updateUndoRedoState()
         triggerRenderPreview()
     }
 
@@ -417,6 +427,7 @@ class FilterEditorViewModel(
         hasChanges = false
         undoStack.clear()
         redoStack.clear()
+        updateUndoRedoState()
         triggerRenderPreview()
         logger.d(TAG, "已丢弃所有未保存的更改")
     }

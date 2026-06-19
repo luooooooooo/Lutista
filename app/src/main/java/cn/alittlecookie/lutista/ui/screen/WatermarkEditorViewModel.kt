@@ -450,6 +450,7 @@ class WatermarkEditorViewModel(
         scene = newScene
         hasChanges = true
         historyManager.saveState(newScene)
+        updateUndoRedoState()
         triggerComputeLayout()
     }
 
@@ -457,6 +458,7 @@ class WatermarkEditorViewModel(
         val previous = historyManager.undo() ?: return
         scene = previous
         hasChanges = true
+        updateUndoRedoState()
         triggerComputeLayout()
     }
 
@@ -464,11 +466,19 @@ class WatermarkEditorViewModel(
         val next = historyManager.redo() ?: return
         scene = next
         hasChanges = true
+        updateUndoRedoState()
         triggerComputeLayout()
     }
 
-    val canUndo: Boolean get() = historyManager.canUndo()
-    val canRedo: Boolean get() = historyManager.canRedo()
+    var canUndo by mutableStateOf(false)
+        private set
+    var canRedo by mutableStateOf(false)
+        private set
+
+    private fun updateUndoRedoState() {
+        canUndo = historyManager.canUndo()
+        canRedo = historyManager.canRedo()
+    }
 
     fun updateName(name: String) {
         watermarkName = name
@@ -508,9 +518,11 @@ class WatermarkEditorViewModel(
             watermarkName = existingEntity?.name ?: "未命名水印"
             hasChanges = false
             historyManager.clear()
+            updateUndoRedoState()
             triggerComputeLayout()
         } catch (_: Exception) {
             historyManager.clear()
+            updateUndoRedoState()
             triggerComputeLayout()
         }
     }
