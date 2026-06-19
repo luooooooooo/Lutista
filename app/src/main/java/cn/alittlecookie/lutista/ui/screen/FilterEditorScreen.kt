@@ -69,6 +69,7 @@ import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.ListPopupColumn
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.PopupPositionProvider
+import top.yukonga.miuix.kmp.basic.RangeSlider
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Slider
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
@@ -1143,6 +1144,9 @@ private fun GrainTabContent(
     var highlightThreshold by remember(config.grainConfig.highlightThreshold) {
         mutableFloatStateOf(config.grainConfig.highlightThreshold)
     }
+    var toneRange by remember(shadowThreshold, highlightThreshold) {
+        mutableStateOf(shadowThreshold..highlightThreshold)
+    }
     var shadowGrainRatio by remember(config.grainConfig.shadowGrainRatio) {
         mutableFloatStateOf(config.grainConfig.shadowGrainRatio * 100f)
     }
@@ -1226,27 +1230,28 @@ private fun GrainTabContent(
         item {
             // 影调阈值
             SectionTitle("影调阈值")
-            SliderWithValue(
-                label = "阴影阈值",
-                value = shadowThreshold,
-                onValueChange = { shadowThreshold = it },
-                onValueChangeFinished = {
-                    onConfigChange { it.copy(grainConfig = buildGrainConfig()) }
-                },
-                valueRange = 0f..255f
-            )
-        }
-
-        item {
-            SliderWithValue(
-                label = "高光阈值",
-                value = highlightThreshold,
-                onValueChange = { highlightThreshold = it },
-                onValueChangeFinished = {
-                    onConfigChange { it.copy(grainConfig = buildGrainConfig()) }
-                },
-                valueRange = 0f..255f
-            )
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(start = 0.dp, end = 0.dp, bottom = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("阴影: ${toneRange.start.toInt()}", fontSize = 14.sp, color = MiuixTheme.colorScheme.onSurface)
+                    Text("中间调", fontSize = 14.sp, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+                    Text("高光: ${toneRange.endInclusive.toInt()}", fontSize = 14.sp, color = MiuixTheme.colorScheme.onSurface)
+                }
+                RangeSlider(
+                    value = toneRange,
+                    onValueChange = { toneRange = it },
+                    onValueChangeFinished = {
+                        shadowThreshold = toneRange.start
+                        highlightThreshold = toneRange.endInclusive
+                        onConfigChange { it.copy(grainConfig = buildGrainConfig()) }
+                    },
+                    valueRange = 0f..255f
+                )
+            }
         }
 
         item {
