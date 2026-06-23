@@ -8,6 +8,8 @@ import cn.alittlecookie.lutista.data.model.FilterConfig
 import cn.alittlecookie.lutista.data.model.UnifiedLut
 import cn.alittlecookie.lutista.gpu.VulkanGpuEngine
 import cn.alittlecookie.lutista.manager.LogManager
+import cn.alittlecookie.lutista.manager.SettingsManager
+import cn.alittlecookie.lutista.util.ExifUtils
 import cn.alittlecookie.lutista.util.LutParser
 import cn.alittlecookie.lutista.watermark.model.Scene
 import cn.alittlecookie.lutista.watermark.renderer.WatermarkProcessor
@@ -18,7 +20,8 @@ class ImageProcessingEngine(
     private val lutParser: LutParser,
     private val lutProcessor: LutProcessor,
     private val watermarkProcessor: WatermarkProcessor,
-    private val vulkanGpuEngine: VulkanGpuEngine
+    private val vulkanGpuEngine: VulkanGpuEngine,
+    private val settingsManager: SettingsManager
 ) {
     companion object {
         private const val TAG = "ImageProcessingEngine"
@@ -26,6 +29,8 @@ class ImageProcessingEngine(
 
     private var lastLutPath1: String? = null
     private var lastLutPath2: String? = null
+    private var lastLutSize1: Int = 0
+    private var lastLutSize2: Int = 0
     private var lut1Uploaded = false
     private var lut2Uploaded = false
 
@@ -57,7 +62,8 @@ class ImageProcessingEngine(
         try {
             val inputBitmap = context.contentResolver.openInputStream(Uri.parse(uri))?.use { stream ->
                 BitmapFactory.decodeStream(stream)
-            } ?: return null
+            }?.let { ExifUtils.correctOrientation(it, context, Uri.parse(uri)) }
+                ?: return null
 
             val width = inputBitmap.width
             val height = inputBitmap.height
@@ -112,27 +118,30 @@ class ImageProcessingEngine(
     }
 
     private fun uploadLutIfNeeded(filter: FilterConfig) {
-        if (filter.lutPath1 != lastLutPath1) {
+        val targetSize = settingsManager.getLutPrecisionSync()
+        if (filter.lutPath1 != lastLutPath1 || targetSize != lastLutSize1) {
             lut1Uploaded = false
             if (filter.lutPath1 != null) {
-                val lut = lutProcessor.loadLutForGpu(filter.lutPath1)
+                val lut = lutProcessor.loadLutForGpu(filter.lutPath1, targetSize)
                 if (lut != null) {
                     vulkanGpuEngine.uploadLut(lut, 0)
                     lut1Uploaded = true
                 }
             }
             lastLutPath1 = filter.lutPath1
+            lastLutSize1 = targetSize
         }
-        if (filter.lutPath2 != lastLutPath2) {
+        if (filter.lutPath2 != lastLutPath2 || targetSize != lastLutSize2) {
             lut2Uploaded = false
             if (filter.lutPath2 != null) {
-                val lut = lutProcessor.loadLutForGpu(filter.lutPath2)
+                val lut = lutProcessor.loadLutForGpu(filter.lutPath2, targetSize)
                 if (lut != null) {
                     vulkanGpuEngine.uploadLut(lut, 1)
                     lut2Uploaded = true
                 }
             }
             lastLutPath2 = filter.lutPath2
+            lastLutSize2 = targetSize
         }
     }
 
@@ -187,8 +196,9 @@ class ImageProcessingEngine(
         var idx = 0
         params[idx++] = if (lut1Uploaded) filter.lutConcentration1 else 0f
         params[idx++] = if (lut2Uploaded) filter.lutConcentration2 else 0f
-        params[idx++] = 33f
-        params[idx++] = 33f
+        val globalLutSize = settingsManager.getLutPrecisionSync().toFloat()
+        params[idx++] = globalLutSize
+        params[idx++] = globalLutSize
         params[idx++] = filter.exposure / 10f
         params[idx++] = filter.contrast
         params[idx++] = filter.highlights

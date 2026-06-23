@@ -32,6 +32,8 @@ fun MainTabScreen(
     launchPicker: () -> Unit = {},
     onEditFilter: (Long) -> Unit = {},
     onEditWatermark: (Long) -> Unit = {},
+    onMonitorFolderClick: () -> Unit = {},
+    onOutputFolderClick: () -> Unit = {},
     initialPage: Int = 0,
     recipeSubTab: Int = 0,
     onRecipeSubTabChange: (Int) -> Unit = {}
@@ -76,7 +78,9 @@ fun MainTabScreen(
                 modifier = Modifier.padding(top = paddingValues.calculateTopPadding()),
                 scrollBehavior = scrollBehavior,
                 onPhotoSelected = onPhotoSelected,
-                launchPicker = launchPicker
+                launchPicker = launchPicker,
+                onMonitorFolderClick = onMonitorFolderClick,
+                onOutputFolderClick = onOutputFolderClick
             )
             1 -> RecipeRoomScreen(
                 modifier = Modifier.padding(

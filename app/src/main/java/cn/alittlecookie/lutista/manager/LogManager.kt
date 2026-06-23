@@ -2,10 +2,13 @@ package cn.alittlecookie.lutista.manager
 
 import android.content.Context
 import android.util.Log
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import timber.log.Timber
 import java.io.File
@@ -22,6 +25,8 @@ class LogManager(
     private val logDir = File(context.filesDir, "logs")
     private val _logEntries = MutableStateFlow<List<LogEntry>>(emptyList())
     val logEntries: StateFlow<List<LogEntry>> = _logEntries.asStateFlow()
+    private var fileTree: FileLogTree? = null
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     init {
         logDir.mkdirs()
@@ -30,7 +35,26 @@ class LogManager(
 
     private fun setupTimber() {
         if (settingsManager.isLogEnabledSync()) {
-            Timber.plant(FileLogTree(logDir))
+            fileTree = FileLogTree(logDir)
+            Timber.plant(fileTree!!)
+        }
+    }
+
+    /**
+     * 观察 logEnabled 变化，运行时动态开关文件日志
+     * 必须在主线程调用，确保 SettingsManager Flow 正常运行
+     */
+    fun observeLogEnabled() {
+        appScope.launch {
+            settingsManager.logEnabled.collect { enabled ->
+                if (enabled && fileTree == null) {
+                    fileTree = FileLogTree(logDir)
+                    Timber.plant(fileTree!!)
+                } else if (!enabled && fileTree != null) {
+                    Timber.uproot(fileTree!!)
+                    fileTree = null
+                }
+            }
         }
     }
 

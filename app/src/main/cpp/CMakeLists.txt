@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 17)
 
 if(ANDROID_ABI STREQUAL "arm64-v8a")
 
-    find_package(vulkan REQUIRED)
+    find_package(Vulkan REQUIRED)
 
     # Find glslc from NDK
     if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Windows")
@@ -14,14 +14,14 @@ if(ANDROID_ABI STREQUAL "arm64-v8a")
         set(_GLSLC_EXT "")
     endif()
 
-    # Use CMAKE_ANDROID_NDK (set by NDK toolchain) to find glslc directly
-    set(GLSLC "${CMAKE_ANDROID_NDK}/shader-tools/${ANDROID_HOST_PREBUILT_TAG}/glslc${_GLSLC_EXT}")
-    if(NOT EXISTS "${GLSLC}")
-        # Fallback: try ANDROID_NDK env var
-        set(GLSLC "$ENV{ANDROID_NDK}/shader-tools/${ANDROID_HOST_PREBUILT_TAG}/glslc${_GLSLC_EXT}")
+    # glslc path: prefer Gradle-passed ANDROID_NDK, then fall back to toolchain
+    if(DEFINED ANDROID_NDK AND NOT ANDROID_NDK STREQUAL "")
+        set(GLSLC "${ANDROID_NDK}/shader-tools/${ANDROID_HOST_PREBUILT_TAG}/glslc${_GLSLC_EXT}")
+    else()
+        set(GLSLC "$ENV{ANDROID_NDK_ROOT}/shader-tools/${ANDROID_HOST_PREBUILT_TAG}/glslc${_GLSLC_EXT}")
     endif()
     if(NOT EXISTS "${GLSLC}")
-        message(WARNING "glslc not found at ${GLSLC}. Shader compilation will be skipped.")
+        message(WARNING "glslc not found. Shader compilation will be skipped.")
         unset(GLSLC)
     else()
         message(STATUS "Found glslc: ${GLSLC}")

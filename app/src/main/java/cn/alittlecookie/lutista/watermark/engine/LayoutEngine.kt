@@ -1,6 +1,7 @@
 package cn.alittlecookie.lutista.watermark.engine
 
 import android.graphics.BitmapFactory
+import androidx.exifinterface.media.ExifInterface
 import cn.alittlecookie.lutista.watermark.model.Anchor
 import cn.alittlecookie.lutista.watermark.model.Constraint
 import cn.alittlecookie.lutista.watermark.model.ContainerElement
@@ -133,7 +134,19 @@ class LayoutEngine(private val converter: UnitConverter) {
             val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeFile(uri, opts)
             if (opts.outWidth > 0 && opts.outHeight > 0) {
-                val ratio = opts.outWidth.toDouble() / opts.outHeight.toDouble()
+                var w = opts.outWidth
+                var h = opts.outHeight
+                // Swap dimensions if EXIF orientation would rotate the image
+                try {
+                    val orientation = ExifInterface(uri).getAttributeInt(
+                        ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL
+                    )
+                    if (orientation in listOf(ExifInterface.ORIENTATION_ROTATE_90, ExifInterface.ORIENTATION_ROTATE_270,
+                            ExifInterface.ORIENTATION_TRANSPOSE, ExifInterface.ORIENTATION_TRANSVERSE)) {
+                        w = h.also { h = w }
+                    }
+                } catch (_: Exception) {}
+                val ratio = w.toDouble() / h.toDouble()
                 aspectRatioCache[uri] = ratio
                 return ratio
             }

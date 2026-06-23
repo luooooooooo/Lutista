@@ -101,5 +101,23 @@ class LutProcessor(
         lutCache.clear()
     }
 
-    fun loadLutForGpu(path: String): LutData? = loadLut(path)
+    fun loadLutForGpu(path: String, targetSize: Int): LutData? {
+        val cacheKey = "$path@$targetSize"
+        lutCache[cacheKey]?.let { return it }
+        return try {
+            val file = java.io.File(path)
+            if (!file.exists()) { logger.w(TAG, "LUT file not found: $path"); return null }
+            val parsed = when {
+                path.endsWith(".cube", ignoreCase = true) -> lutParser.parseCube(file)
+                path.endsWith(".vlt", ignoreCase = true) -> lutParser.parseVlt(file)
+                else -> { logger.w(TAG, "Unsupported LUT format: $path"); return null }
+            }
+            val quantized = lutParser.quantizeLut(parsed, targetSize)
+            lutCache[cacheKey] = quantized
+            quantized
+        } catch (e: Exception) {
+            logger.e(TAG, "Failed to load LUT: $path", e)
+            null
+        }
+    }
 }

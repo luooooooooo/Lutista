@@ -63,9 +63,11 @@ android {
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
-            version = "3.22.1"
+            version = "4.1.2"
         }
     }
+    buildToolsVersion = "37.0.0"
+    ndkVersion = "29.0.14206865"
 }
 
 dependencies {
@@ -93,6 +95,9 @@ dependencies {
     implementation(libs.lifecycle.runtime.compose)
     implementation(libs.lifecycle.service)
 
+    // ExifInterface
+    implementation(libs.exifinterface)
+
     // Koin
     implementation(libs.koin.android)
     implementation(libs.koin.compose)
@@ -111,6 +116,9 @@ dependencies {
 
     // DataStore
     implementation(libs.datastore.preferences)
+
+    // DocumentFile (SAF)
+    implementation("androidx.documentfile:documentfile:1.0.1")
 
     // Timber
     implementation(libs.timber)

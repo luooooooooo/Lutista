@@ -14,6 +14,7 @@ import cn.alittlecookie.lutista.data.model.FloatPoint
 import cn.alittlecookie.lutista.data.repository.FilterRepository
 import cn.alittlecookie.lutista.domain.engine.ImageProcessingEngine
 import cn.alittlecookie.lutista.manager.LogManager
+import cn.alittlecookie.lutista.util.ExifUtils
 import cn.alittlecookie.lutista.util.FilterConfigJson.toConfig
 import cn.alittlecookie.lutista.util.FilterConfigJson.toEntity
 import kotlinx.coroutines.CoroutineScope
@@ -169,7 +170,8 @@ class FilterEditorViewModel(
 
                 val bitmap = context.contentResolver.openInputStream(uri)?.use { stream ->
                     BitmapFactory.decodeStream(stream, null, decodeOptions)
-                } ?: run {
+                }?.let { ExifUtils.correctOrientation(it, context, uri) }
+                    ?: run {
                     logger.e(TAG, "无法从 URI 解码图片: $uri")
                     return@launch
                 }

@@ -35,6 +35,8 @@ class LutistaApp : Application() {
 
         instance = this
 
+        get<LogManager>(LogManager::class.java).observeLogEnabled()
+
         initializeVulkan()
         initializeBuiltinFilters()
     }

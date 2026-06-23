@@ -3,6 +3,7 @@ package cn.alittlecookie.lutista.watermark.cache
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
+import cn.alittlecookie.lutista.util.ExifUtils
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -66,6 +67,7 @@ class BitmapCache(private val maxSizeBytes: Int = 50 * 1024 * 1024) {
         options.inJustDecodeBounds = false
 
         return BitmapFactory.decodeFile(uri, options)
+            ?.let { ExifUtils.correctOrientation(it, uri) }
             ?: throw IllegalArgumentException("Failed to decode: $uri")
     }
 

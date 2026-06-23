@@ -56,6 +56,10 @@ class SettingsManager(
         dataStore.edit { prefs -> prefs[LUT_PRECISION_KEY] = precision.name }
     }
 
+    fun getLutPrecisionSync(): Int = runBlocking {
+        dataStore.data.first()[LUT_PRECISION_KEY]?.let { LutPrecision.valueOf(it).size } ?: 33
+    }
+
     // 主题模式
     val themeMode: Flow<ThemeMode> = dataStore.data.map { prefs ->
         prefs[THEME_MODE_KEY]?.let { ThemeMode.valueOf(it) } ?: ThemeMode.SYSTEM
@@ -114,6 +118,52 @@ class SettingsManager(
         dataStore.edit { prefs -> prefs[GLOBAL_WATERMARK_ID_KEY] = id }
     }
 
+    // 自定义输出文件夹 (SAF URI 字符串或文件系统路径)
+    val outputPath: Flow<String> = dataStore.data.map { prefs ->
+        prefs[OUTPUT_PATH_KEY] ?: ""
+    }
+
+    fun getOutputPathSync(): String = runBlocking {
+        dataStore.data.first()[OUTPUT_PATH_KEY] ?: ""
+    }
+
+    suspend fun setOutputPath(path: String) {
+        dataStore.edit { prefs -> prefs[OUTPUT_PATH_KEY] = path }
+    }
+
+    // 服务运行状态
+    val monitorRunning: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[MONITOR_RUNNING_KEY] ?: false
+    }
+
+    suspend fun setMonitorRunning(running: Boolean) {
+        dataStore.edit { prefs -> prefs[MONITOR_RUNNING_KEY] = running }
+    }
+
+    // 仅处理新增文件开关
+    val onlyNewFiles: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[ONLY_NEW_FILES_KEY] ?: true
+    }
+
+    suspend fun setOnlyNewFiles(value: Boolean) {
+        dataStore.edit { prefs -> prefs[ONLY_NEW_FILES_KEY] = value }
+    }
+
+    // 已处理图片计数
+    val processedCount: Flow<Int> = dataStore.data.map { prefs ->
+        prefs[PROCESSED_COUNT_KEY] ?: 0
+    }
+
+    suspend fun incrementProcessedCount() {
+        dataStore.edit { prefs ->
+            prefs[PROCESSED_COUNT_KEY] = (prefs[PROCESSED_COUNT_KEY] ?: 0) + 1
+        }
+    }
+
+    suspend fun resetProcessedCount() {
+        dataStore.edit { prefs -> prefs[PROCESSED_COUNT_KEY] = 0 }
+    }
+
     companion object {
         private val OUTPUT_FORMAT_KEY = stringPreferencesKey("output_format")
         private val JPG_QUALITY_KEY = intPreferencesKey("jpg_quality")
@@ -125,6 +175,10 @@ class SettingsManager(
         private val BUILTIN_FILTER_VERSION_KEY = intPreferencesKey("builtin_filter_version")
         private val GLOBAL_FILTER_ID_KEY = stringPreferencesKey("global_filter_id")
         private val GLOBAL_WATERMARK_ID_KEY = stringPreferencesKey("global_watermark_id")
+        private val OUTPUT_PATH_KEY = stringPreferencesKey("output_path")
+        private val MONITOR_RUNNING_KEY = booleanPreferencesKey("monitor_running")
+        private val ONLY_NEW_FILES_KEY = booleanPreferencesKey("only_new_files")
+        private val PROCESSED_COUNT_KEY = intPreferencesKey("processed_count")
     }
 }
 

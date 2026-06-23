@@ -1,5 +1,10 @@
 package cn.alittlecookie.lutista.ui.screen
 
+import android.content.ComponentName
+import android.content.Intent
+import android.content.ServiceConnection
+import android.net.Uri
+import android.os.IBinder
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +23,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -28,11 +35,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cn.alittlecookie.lutista.data.repository.FilterRepository
 import cn.alittlecookie.lutista.data.repository.WatermarkRepository
+import cn.alittlecookie.lutista.manager.SettingsManager
+import cn.alittlecookie.lutista.service.FileMonitorService
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
@@ -55,19 +68,35 @@ fun HomeScreen(
     modifier: Modifier = Modifier,
     scrollBehavior: ScrollBehavior? = null,
     onPhotoSelected: (List<String>) -> Unit = {},
-    launchPicker: () -> Unit = {}
+    launchPicker: () -> Unit = {},
+    onMonitorFolderClick: () -> Unit = {},
+    onOutputFolderClick: () -> Unit = {}
 ) {
     val filterRepository: FilterRepository = koinInject()
     val watermarkRepository: WatermarkRepository = koinInject()
+    val settingsManager: SettingsManager = koinInject()
+    val scope = remember { CoroutineScope(Dispatchers.Main) }
 
     var isMonitorRunning by remember { mutableStateOf(false) }
+    val monitorRunningPersisted by settingsManager.monitorRunning.collectAsState(initial = false)
+    val processedCount by settingsManager.processedCount.collectAsState(initial = 0)
+
     var isCameraMode by remember { mutableStateOf(false) }
-    var processedCount by remember { mutableIntStateOf(0) }
     var onlyNewFiles by remember { mutableStateOf(true) }
+    val onlyNewFilesPersisted by settingsManager.onlyNewFiles.collectAsState(initial = true)
+
+    LaunchedEffect(onlyNewFilesPersisted) {
+        onlyNewFiles = onlyNewFilesPersisted
+    }
     var selectedFilterIndex by remember { mutableIntStateOf(0) }
     var selectedWatermarkIndex by remember { mutableIntStateOf(0) }
 
     val filtersFromDb by filterRepository.getEnabledFilters().collectAsState(initial = emptyList())
+    val watermarksFromDb by watermarkRepository.getEnabledWatermarks().collectAsState(initial = emptyList())
+    val monitorPath by settingsManager.monitorPath.collectAsState(initial = "")
+    val outputPath by settingsManager.outputPath.collectAsState(initial = "")
+    val globalFilterId by settingsManager.globalFilterId.collectAsState(initial = 0L)
+    val globalWatermarkId by settingsManager.globalWatermarkId.collectAsState(initial = "none")
 
     val filterOptions = remember(filtersFromDb) {
         buildList {
@@ -78,12 +107,70 @@ fun HomeScreen(
         }
     }
 
-    val watermarksFromDb by watermarkRepository.getEnabledWatermarks().collectAsState(initial = emptyList())
-
     val watermarkOptions = remember(watermarksFromDb) {
         buildList {
             add(DropdownItem(text = "无水印"))
             addAll(watermarksFromDb.map { DropdownItem(text = it.name) })
+        }
+    }
+
+    LaunchedEffect(filtersFromDb, globalFilterId) {
+        if (globalFilterId > 0L) {
+            val idx = filtersFromDb.indexOfFirst { it.id == globalFilterId }
+            if (idx >= 0) selectedFilterIndex = idx + 1
+        }
+    }
+
+    LaunchedEffect(watermarksFromDb, globalWatermarkId) {
+        if (globalWatermarkId != "none") {
+            val id = globalWatermarkId.toLongOrNull()
+            if (id != null) {
+                val idx = watermarksFromDb.indexOfFirst { it.id == id }
+                if (idx >= 0) selectedWatermarkIndex = idx + 1
+            }
+        }
+    }
+
+    val context = LocalContext.current
+
+    fun startMonitorService() {
+        val intent = Intent(context, FileMonitorService::class.java).apply {
+            action = FileMonitorService.ACTION_START
+            putExtra(FileMonitorService.EXTRA_PATH, monitorPath)
+            putExtra(FileMonitorService.EXTRA_ONLY_NEW, onlyNewFiles)
+        }
+        context.startForegroundService(intent)
+    }
+
+    fun stopMonitorService() {
+        val intent = Intent(context, FileMonitorService::class.java).apply {
+            action = FileMonitorService.ACTION_STOP
+        }
+        context.startService(intent)
+    }
+
+    DisposableEffect(monitorRunningPersisted) {
+        if (!monitorRunningPersisted) return@DisposableEffect onDispose { }
+
+        val serviceIntent = Intent(context, FileMonitorService::class.java)
+        val conn = object : ServiceConnection {
+            override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+                isMonitorRunning = true
+            }
+
+            override fun onServiceDisconnected(name: ComponentName?) {
+                isMonitorRunning = false
+                scope.launch { settingsManager.setMonitorRunning(false) }
+            }
+        }
+
+        val bound = context.bindService(serviceIntent, conn, 0)
+        if (bound) {
+            onDispose { context.unbindService(conn) }
+        } else {
+            isMonitorRunning = false
+            scope.launch { settingsManager.setMonitorRunning(false) }
+            onDispose { }
         }
     }
 
@@ -106,7 +193,19 @@ fun HomeScreen(
                 isMonitorRunning = isMonitorRunning,
                 processedCount = processedCount,
                 isCameraMode = isCameraMode,
-                onMonitorToggle = { isMonitorRunning = !isMonitorRunning },
+                onMonitorToggle = {
+                    val newState = !isMonitorRunning
+                    isMonitorRunning = newState
+                    scope.launch {
+                        if (newState && monitorPath.isNotEmpty()) {
+                            startMonitorService()
+                        }
+                        settingsManager.setMonitorRunning(newState)
+                        if (!newState) {
+                            stopMonitorService()
+                        }
+                    }
+                },
                 onCameraModeChange = { isCameraMode = it },
                 onCameraClick = { /* TODO: 打开联机页面 */ },
                 onPhotoSelected = onPhotoSelected,
@@ -116,16 +215,47 @@ fun HomeScreen(
 
         item {
             MonitorSettingsCard(
+                isMonitorRunning = isMonitorRunning,
                 onlyNewFiles = onlyNewFiles,
-                onOnlyNewFilesChange = { onlyNewFiles = it },
-                onMonitorFolderClick = { /* TODO: SAF 选择监控文件夹 */ },
-                onOutputFolderClick = { /* TODO: SAF 选择输出文件夹 */ },
+                onOnlyNewFilesChange = {
+                    onlyNewFiles = it
+                    scope.launch {
+                        settingsManager.setOnlyNewFiles(it)
+                        if (isMonitorRunning && monitorPath.isNotEmpty()) {
+                            startMonitorService()
+                        }
+                    }
+                },
+                onMonitorFolderClick = onMonitorFolderClick,
+                onOutputFolderClick = onOutputFolderClick,
+                monitorPath = monitorPath,
+                outputPath = outputPath,
                 filterOptions = filterOptions,
                 selectedFilterIndex = selectedFilterIndex,
-                onFilterSelected = { selectedFilterIndex = it },
+                onFilterSelected = { idx ->
+                    selectedFilterIndex = idx
+                    scope.launch {
+                        if (idx == 0) {
+                            settingsManager.setGlobalFilterId(0L)
+                        } else {
+                            val filter = filtersFromDb.getOrNull(idx - 1)
+                            if (filter != null) settingsManager.setGlobalFilterId(filter.id)
+                        }
+                    }
+                },
                 watermarkOptions = watermarkOptions,
                 selectedWatermarkIndex = selectedWatermarkIndex,
-                onWatermarkSelected = { selectedWatermarkIndex = it }
+                onWatermarkSelected = { idx ->
+                    selectedWatermarkIndex = idx
+                    scope.launch {
+                        if (idx == 0) {
+                            settingsManager.setGlobalWatermarkId("none")
+                        } else {
+                            val wm = watermarksFromDb.getOrNull(idx - 1)
+                            if (wm != null) settingsManager.setGlobalWatermarkId(wm.id.toString())
+                        }
+                    }
+                }
             )
         }
     }
@@ -200,7 +330,7 @@ private fun StatusSection(
                     Spacer(Modifier.height(2.dp))
                     Text(
                         modifier = Modifier.fillMaxWidth(),
-                        text = "已处理 $processedCount 张图片",
+                        text = if (isMonitorRunning) "已处理 $processedCount 张图片" else "点击此处开启服务",
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Medium,
                         color = if (isMonitorRunning) {
@@ -286,10 +416,13 @@ private fun StatusSection(
 
 @Composable
 private fun MonitorSettingsCard(
+    isMonitorRunning: Boolean = false,
     onlyNewFiles: Boolean,
     onOnlyNewFilesChange: (Boolean) -> Unit,
     onMonitorFolderClick: () -> Unit,
     onOutputFolderClick: () -> Unit,
+    monitorPath: String = "",
+    outputPath: String = "",
     filterOptions: List<DropdownItem>,
     selectedFilterIndex: Int,
     onFilterSelected: (Int) -> Unit,
@@ -303,37 +436,49 @@ private fun MonitorSettingsCard(
         Column(modifier = Modifier.fillMaxWidth()) {
             SwitchPreference(
                 title = "仅处理新增文件",
-                summary = "开启后只处理监控文件夹中新增的图片",
+                summary = if (isMonitorRunning) "服务运行中，不可更改" else "开启后只处理监控文件夹中新增的图片",
                 checked = onlyNewFiles,
+                enabled = !isMonitorRunning,
                 onCheckedChange = onOnlyNewFilesChange
             )
             ArrowPreference(
                 title = "监控文件夹",
-                summary = "点击设置监控文件夹",
-                onClick = onMonitorFolderClick
+                summary = if (monitorPath.isNotEmpty()) decodeSafPath(monitorPath) else "点击设置监控文件夹",
+                enabled = !isMonitorRunning,
+                onClick = if (isMonitorRunning) ({}) else onMonitorFolderClick
             )
 
             ArrowPreference(
                 title = "输出文件夹",
-                summary = "点击设置输出文件夹",
-                onClick = onOutputFolderClick
+                summary = if (outputPath.isNotEmpty()) decodeSafPath(outputPath) else "Pictures/Lutista",
+                enabled = !isMonitorRunning,
+                onClick = if (isMonitorRunning) ({}) else onOutputFolderClick
             )
 
             OverlaySpinnerPreference(
                 title = "滤镜选择",
                 summary = "选择要应用的滤镜",
+                enabled = !isMonitorRunning,
                 items = filterOptions,
                 selectedIndex = selectedFilterIndex,
-                onSelectedIndexChange = onFilterSelected
+                onSelectedIndexChange = if (isMonitorRunning) ({ _ -> }) else onFilterSelected
             )
 
             OverlaySpinnerPreference(
                 title = "边框水印选择",
                 summary = "选择要应用的边框水印",
+                enabled = !isMonitorRunning,
                 items = watermarkOptions,
                 selectedIndex = selectedWatermarkIndex,
-                onSelectedIndexChange = onWatermarkSelected
+                onSelectedIndexChange = if (isMonitorRunning) ({ _ -> }) else onWatermarkSelected
             )
         }
     }
+}
+
+private fun decodeSafPath(uri: String): String {
+    if (!uri.startsWith("content://")) return uri.substringAfterLast('/').ifEmpty { uri }
+    val path = Uri.decode(uri.substringAfterLast("tree/").substringBefore('?'))
+    val trimmed = path.removePrefix("primary:").removePrefix("/")
+    return if (trimmed.length > 30) "...${trimmed.takeLast(28)}" else trimmed
 }

@@ -9,6 +9,7 @@ import cn.alittlecookie.lutista.data.model.UnifiedLut
 import cn.alittlecookie.lutista.domain.engine.ImageProcessingEngine
 import cn.alittlecookie.lutista.manager.LogManager
 import cn.alittlecookie.lutista.manager.SettingsManager
+import cn.alittlecookie.lutista.util.ExifUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -37,6 +38,7 @@ class ProcessImageUseCase(
     ): ProcessResult = withContext(Dispatchers.IO) {
         try {
             val inputBitmap = BitmapFactory.decodeFile(sourcePath)
+                ?.let { ExifUtils.correctOrientation(it, sourcePath) }
             if (inputBitmap == null) {
                 return@withContext ProcessResult.Error("无法读取图像: $sourcePath")
             }
@@ -58,6 +60,7 @@ class ProcessImageUseCase(
                 else -> Bitmap.CompressFormat.JPEG
             }
             FileOutputStream(outputPath).use { outputBitmap.compress(format, 95, it) }
+            ExifUtils.copyExif(sourcePath, outputPath)
             outputBitmap.recycle()
 
             logger.i(TAG, "图像处理成功: $outputPath")

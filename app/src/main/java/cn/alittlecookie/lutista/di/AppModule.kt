@@ -24,6 +24,7 @@ import cn.alittlecookie.lutista.service.TaskSubmissionManager
 import cn.alittlecookie.lutista.util.FileUtils
 import cn.alittlecookie.lutista.util.ImageUtils
 import cn.alittlecookie.lutista.util.LutParser
+import cn.alittlecookie.lutista.util.MediaStoreScanner
 import cn.alittlecookie.lutista.watermark.cache.BitmapCache
 import cn.alittlecookie.lutista.watermark.manager.HistoryManager
 import cn.alittlecookie.lutista.watermark.manager.ResourceManager
@@ -63,6 +64,7 @@ val appModule = module {
     singleOf(::FileUtils)
     singleOf(::ImageUtils)
     singleOf(::LutParser)
+    singleOf(::MediaStoreScanner)
 
     // Image Processing Engine
     singleOf(::LutProcessor)
@@ -76,7 +78,7 @@ val appModule = module {
     singleOf(::ProcessImageUseCase)
 
     // Services
-    singleOf(::ImageProcessingService)
+    single { ImageProcessingService(androidContext(), get(), get(), get(), get(), get(), get()) }
     singleOf(::TaskSubmissionManager)
 
     // Watermark System

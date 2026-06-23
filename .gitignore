@@ -17,3 +17,5 @@ local.properties
 /.opencode/
 /AGENTS.md
 /.tamp/
+/.idea/deviceManager.xml
+/.idea/deploymentTargetSelector.xml

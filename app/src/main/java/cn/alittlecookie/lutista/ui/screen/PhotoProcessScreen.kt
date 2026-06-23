@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -59,7 +60,10 @@ import cn.alittlecookie.lutista.data.repository.FilterRepository
 import cn.alittlecookie.lutista.data.repository.WatermarkRepository
 import cn.alittlecookie.lutista.domain.engine.ImageProcessingEngine
 import cn.alittlecookie.lutista.manager.LogManager
+import cn.alittlecookie.lutista.manager.OutputFormat
 import cn.alittlecookie.lutista.manager.SettingsManager
+import cn.alittlecookie.lutista.util.ExifResolution
+import cn.alittlecookie.lutista.util.ExifUtils
 import cn.alittlecookie.lutista.watermark.model.Scene
 import cn.alittlecookie.lutista.watermark.renderer.WatermarkProcessor
 import coil.compose.AsyncImage
@@ -90,8 +94,9 @@ import top.yukonga.miuix.kmp.icon.extended.Create
 import top.yukonga.miuix.kmp.icon.extended.FavoritesFill
 import top.yukonga.miuix.kmp.icon.extended.Ok
 import top.yukonga.miuix.kmp.menu.OverlayIconCascadingDropdownMenu
-import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.window.WindowDialog
+import java.io.ByteArrayOutputStream
 
 data class PhotoItem(
     val uri: String,
@@ -285,28 +290,53 @@ fun PhotoProcessScreen(
         )
     }
 
-    fun saveBitmapToGallery(context: Context, bitmap: Bitmap, displayName: String): Uri? {
+    fun saveBitmapToGallery(context: Context, bitmap: Bitmap, displayName: String, exifResolution: ExifResolution?, outputFormat: OutputFormat, quality: Int): Uri? {
+        val bitmapFormat = when (outputFormat) {
+            OutputFormat.PNG -> Bitmap.CompressFormat.PNG
+            else -> Bitmap.CompressFormat.JPEG
+        }
+        val mimeType = when (outputFormat) {
+            OutputFormat.PNG -> "image/png"
+            else -> "image/jpeg"
+        }
+        val bos = ByteArrayOutputStream()
+        bitmap.compress(bitmapFormat, quality, bos)
+        var outputBytes = bos.toByteArray()
+
+        if (outputFormat != OutputFormat.PNG && exifResolution?.app1Segment != null) {
+            val app1 = try {
+                ExifUtils.setOrientationInApp1(exifResolution.app1Segment, 1)
+            } catch (e: Exception) {
+                Log.e("ExifUtils", "setOrientationInApp1 failed", e)
+                exifResolution.app1Segment
+            }
+            outputBytes = ExifUtils.injectApp1ToJpeg(outputBytes, app1)
+        }
+
         val contentValues = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, displayName)
-            put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+            put(MediaStore.Images.Media.MIME_TYPE, mimeType)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/Lutista")
                 put(MediaStore.Images.Media.IS_PENDING, 1)
             }
         }
         val resolver = context.contentResolver
-        val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
-        uri?.let {
-            resolver.openOutputStream(it)?.use { stream ->
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 95, stream)
-            }
+        val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues) ?: return null
+        try {
+            resolver.openOutputStream(uri)?.use { it.write(outputBytes) }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 contentValues.clear()
                 contentValues.put(MediaStore.Images.Media.IS_PENDING, 0)
-                resolver.update(it, contentValues, null, null)
+                resolver.update(uri, contentValues, null, null)
             }
+            Log.d("ExifUtils", "save: $displayName → $uri (${outputBytes.size}B, hasApp1=${exifResolution?.app1Segment != null})")
+            return uri
+        } catch (e: Exception) {
+            Log.e("ExifUtils", "save failed", e)
+            try { resolver.delete(uri, null, null) } catch (_: Exception) {}
+            return null
         }
-        return uri
     }
 
     fun startProcessing() {
@@ -333,11 +363,19 @@ fun PhotoProcessScreen(
                     processingStatusText = "正在处理..."
                     processingProgress = photoIdx.toFloat() / totalPhotos
 
+                    var cachedExif: ExifResolution? = null
+
                     val resultBitmap = withContext(Dispatchers.IO) {
                         ensureActive()
 
-                        val inputBitmap = context.contentResolver.openInputStream(Uri.parse(photo.uri))?.use { stream ->
+                        val photoUri = Uri.parse(photo.uri)
+                        cachedExif = ExifUtils.resolveExifSource(context, photoUri)
+
+                        val inputBitmap = context.contentResolver.openInputStream(photoUri)?.use { stream ->
                             BitmapFactory.decodeStream(stream)
+                        }?.let { bitmap ->
+                            val exif = cachedExif?.exif
+                            if (exif != null) ExifUtils.applyOrientation(bitmap, exif) else bitmap
                         }
                         if (inputBitmap == null) {
                             logger.e("PhotoProcessScreen", "无法读取图片: ${photo.uri}")
@@ -371,8 +409,17 @@ fun PhotoProcessScreen(
                     if (resultBitmap != null) {
                         ensureActive()
                         withContext(Dispatchers.IO) {
-                            val displayName = "Lutista_${System.currentTimeMillis()}_${photoIdx + 1}.jpg"
-                            saveBitmapToGallery(context, resultBitmap, displayName)
+                            val outFormat = settingsManager.defaultOutputFormat.first()
+                            val outQuality = when (outFormat) {
+                                OutputFormat.PNG -> settingsManager.pngCompression.first()
+                                else -> settingsManager.jpgQuality.first()
+                            }
+                            val ext = when (outFormat) {
+                                OutputFormat.PNG -> ".png"
+                                else -> ".jpg"
+                            }
+                            val displayName = "Lutista_${System.currentTimeMillis()}_${photoIdx + 1}$ext"
+                            val outUri = saveBitmapToGallery(context, resultBitmap, displayName, cachedExif, outFormat, outQuality)
                             resultBitmap.recycle()
                         }
                         processedCount++
@@ -495,6 +542,7 @@ fun PhotoProcessScreen(
             processedCount = resultPhotoCount,
             totalPhotos = photos.size,
             statusText = processingStatusText,
+            show = showProcessingDialog,
             onCancel = {
                 isCancelled = true
                 wasCancelled = true
@@ -665,7 +713,7 @@ private fun MainPreviewArea(
                     BitmapFactory.decodeStream(stream, null, BitmapFactory.Options().apply {
                         inSampleSize = sampleSize
                     })
-                }
+                }?.let { ExifUtils.correctOrientation(it, context, Uri.parse(photoUri)) }
                 if (bmp != null) {
                     val w = bmp.width
                     val h = bmp.height
@@ -703,15 +751,15 @@ private fun MainPreviewArea(
             }
             // Apply watermark if selected
             val wmId = currentSettings.watermarkId
-            android.util.Log.d("PhotoProcess", "Preview watermark: id=$wmId")
+            Log.d("PhotoProcess", "Preview watermark: id=$wmId")
             val wmScene = if (wmId != "none") watermarkRepository.getSceneById(wmId.toLongOrNull() ?: 0L) else null
-            android.util.Log.d("PhotoProcess", "Preview watermark scene: ${wmScene?.let { "elements=${it.elements.size}" } ?: "null"}")
+            Log.d("PhotoProcess", "Preview watermark scene: ${wmScene?.let { "elements=${it.elements.size}" } ?: "null"}")
             val finalResult = if (result != null && wmScene != null) {
                 watermarkProcessor.applyWatermark(result, wmScene)
             } else result ?: return@withContext
 
             val elapsed = (System.nanoTime() - t0) / 1_000_000
-            android.util.Log.d("PreviewTiming", "filterId=${currentSettings.filterId} gen=$gen elapsed=${elapsed}ms size=${cachedWidth}x${cachedHeight}")
+            Log.d("PreviewTiming", "filterId=${currentSettings.filterId} gen=$gen elapsed=${elapsed}ms size=${cachedWidth}x${cachedHeight}")
             if (gen == filterGeneration) {
                 previewBitmap = finalResult
             }
@@ -1002,10 +1050,11 @@ private fun ProcessingDialog(
     processedCount: Int,
     totalPhotos: Int,
     statusText: String,
+    show: Boolean,
     onCancel: () -> Unit
 ) {
-    OverlayDialog(
-        show = true,
+    WindowDialog(
+        show = show,
         onDismissRequest = onCancel
     ) {
         Column(

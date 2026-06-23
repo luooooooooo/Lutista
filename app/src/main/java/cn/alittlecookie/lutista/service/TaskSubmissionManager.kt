@@ -5,6 +5,7 @@ import cn.alittlecookie.lutista.data.database.entity.TaskSource
 import cn.alittlecookie.lutista.data.database.entity.TaskStatus
 import cn.alittlecookie.lutista.data.repository.TaskRepository
 import cn.alittlecookie.lutista.manager.LogManager
+import cn.alittlecookie.lutista.manager.SettingsManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -19,7 +20,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 class TaskSubmissionManager(
     private val taskRepository: TaskRepository,
     private val imageProcessingService: ImageProcessingService,
-    private val logger: LogManager
+    private val logger: LogManager,
+    private val settingsManager: SettingsManager
 ) {
     companion object {
         private const val TAG = "TaskSubmissionManager"
@@ -32,7 +34,7 @@ class TaskSubmissionManager(
 
     val cancelFlagMap = ConcurrentHashMap<Long, AtomicBoolean>()
     private val pauseFlag = AtomicBoolean(false)
-    private var isProcessing = false
+    private val isProcessing = AtomicBoolean(false)
 
     suspend fun submitTask(
         sourcePath: String,
@@ -62,7 +64,7 @@ class TaskSubmissionManager(
 
         logger.i(TAG, "任务已提交: $taskId, 来源: $source, 路径: $sourcePath")
 
-        if (!isProcessing) {
+        if (!isProcessing.get()) {
             startProcessing()
         }
 
@@ -70,17 +72,16 @@ class TaskSubmissionManager(
     }
 
     private fun startProcessing() {
-        if (isProcessing) return
-        isProcessing = true
+        if (!isProcessing.compareAndSet(false, true)) return
 
         scope.launch {
-            while (isProcessing) {
+            while (isProcessing.get()) {
                 while (pauseFlag.get()) {
                     delay(100)
                 }
 
                 val task = mutex.withLock { taskQueue.poll() } ?: run {
-                    isProcessing = false
+                    isProcessing.set(false)
                     return@launch
                 }
 
@@ -108,6 +109,7 @@ class TaskSubmissionManager(
 
                         success = true
                         taskRepository.completeTask(task.id, TaskStatus.COMPLETED.name)
+                        settingsManager.incrementProcessedCount()
                         logger.i(TAG, "任务完成: ${task.id}")
                     } catch (e: CancellationException) {
                         taskRepository.updateStatus(task.id, TaskStatus.CANCELLED.name)
@@ -164,7 +166,7 @@ class TaskSubmissionManager(
                 taskQueue.add(task.copy(status = TaskStatus.PENDING.name))
             }
 
-            if (!isProcessing) {
+            if (!isProcessing.get()) {
                 startProcessing()
             }
         }

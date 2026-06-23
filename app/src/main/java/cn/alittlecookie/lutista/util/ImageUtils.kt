@@ -13,7 +13,7 @@ class ImageUtils(
         return try {
             context.contentResolver.openInputStream(uri)?.use { stream ->
                 BitmapFactory.decodeStream(stream)
-            }
+            }?.let { ExifUtils.correctOrientation(it, context, uri) }
         } catch (e: Exception) {
             null
         }
@@ -21,7 +21,7 @@ class ImageUtils(
 
     fun loadBitmapFromFile(path: String): Bitmap? {
         return try {
-            BitmapFactory.decodeFile(path)
+            BitmapFactory.decodeFile(path)?.let { ExifUtils.correctOrientation(it, path) }
         } catch (e: Exception) {
             null
         }

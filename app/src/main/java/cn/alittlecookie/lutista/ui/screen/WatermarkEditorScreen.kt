@@ -56,6 +56,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cn.alittlecookie.lutista.data.repository.WatermarkRepository
+import cn.alittlecookie.lutista.util.ExifUtils
 import cn.alittlecookie.lutista.watermark.engine.UnitConverter
 import cn.alittlecookie.lutista.watermark.manager.HistoryManager
 import cn.alittlecookie.lutista.watermark.model.Anchor
@@ -461,9 +462,10 @@ private fun DrawScope.drawElementRecursive(
                     val imgBitmap = if (element.imageUri.startsWith("content://")) {
                         appCtx.contentResolver.openInputStream(android.net.Uri.parse(element.imageUri))?.use { stream ->
                             BitmapFactory.decodeStream(stream)
-                        }
+                        }?.let { ExifUtils.correctOrientation(it, appCtx, android.net.Uri.parse(element.imageUri)) }
                     } else {
                         BitmapFactory.decodeFile(element.imageUri)
+                            ?.let { ExifUtils.correctOrientation(it, element.imageUri) }
                     }
                     if (imgBitmap != null) {
                         drawImage(

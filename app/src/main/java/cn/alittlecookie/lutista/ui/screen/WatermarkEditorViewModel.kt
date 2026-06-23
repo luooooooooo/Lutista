@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import cn.alittlecookie.lutista.R
 import cn.alittlecookie.lutista.data.database.entity.WatermarkEntity
 import cn.alittlecookie.lutista.data.repository.WatermarkRepository
+import cn.alittlecookie.lutista.util.ExifUtils
 import cn.alittlecookie.lutista.watermark.engine.LayoutEngine
 import cn.alittlecookie.lutista.watermark.engine.UnitConverter
 import cn.alittlecookie.lutista.watermark.manager.HistoryManager
@@ -124,6 +125,7 @@ class WatermarkEditorViewModel(
             try {
                 val localPath = copyToLocal(uri)
                 val bitmap = BitmapFactory.decodeFile(localPath)
+                    ?.let { ExifUtils.correctOrientation(it, localPath) }
                 if (bitmap != null) {
                     baseImageWidth = bitmap.width
                     baseImageHeight = bitmap.height
