@@ -11,5 +11,5 @@
 # Keep Room entities
 -keep class cn.alittlecookie.lutista.data.database.entity.** { *; }
 
-# Keep Hilt
--keep class dagger.hilt.** { *; }
+# Keep Vulkan GPU engine JNI (R8 would strip/rename native methods)
+-keep class cn.alittlecookie.lutista.gpu.** { *; }

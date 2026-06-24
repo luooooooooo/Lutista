@@ -19,3 +19,4 @@ local.properties
 /.tamp/
 /.idea/deviceManager.xml
 /.idea/deploymentTargetSelector.xml
+/app/release/
