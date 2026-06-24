@@ -28,6 +28,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,7 +39,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -50,6 +53,10 @@ import cn.alittlecookie.lutista.domain.usecase.ExportFilterUseCase
 import cn.alittlecookie.lutista.domain.usecase.ImportLutUseCase
 import cn.alittlecookie.lutista.manager.BuiltinFilterManager
 import cn.alittlecookie.lutista.manager.LogManager
+import cn.alittlecookie.lutista.manager.SettingsManager
+import cn.alittlecookie.lutista.ui.theme.getAppBarColor
+import cn.alittlecookie.lutista.ui.theme.lutistaBlurEffect
+import cn.alittlecookie.lutista.ui.theme.rememberLutistaBlurBackdrop
 import cn.alittlecookie.lutista.watermark.model.BaseImageElement
 import cn.alittlecookie.lutista.watermark.model.Scene
 import kotlinx.coroutines.CoroutineScope
@@ -69,11 +76,14 @@ import top.yukonga.miuix.kmp.basic.DropdownImpl
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.ListPopupColumn
+import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.PopupPositionProvider
-import top.yukonga.miuix.kmp.basic.ScrollBehavior
 import top.yukonga.miuix.kmp.basic.TabRowWithContour
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextField
+import top.yukonga.miuix.kmp.basic.TopAppBar
+import top.yukonga.miuix.kmp.basic.rememberTopAppBarState
+import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Add
 import top.yukonga.miuix.kmp.icon.extended.Import
@@ -112,16 +122,13 @@ enum class MoreAction {
 
 @Composable
 fun RecipeRoomScreen(
-    modifier: Modifier = Modifier,
-    scrollBehavior: ScrollBehavior? = null,
     onEditFilter: (Long) -> Unit = {},
     onEditWatermark: (Long) -> Unit = {},
-    importTrigger: Long = 0L,
-    createTrigger: Long = 0L,
     selectedSubTab: Int = 0,
     onSubTabChange: (Int) -> Unit = {}
 ) {
     val context = LocalContext.current
+    val settingsManager: SettingsManager = koinInject()
     val filterRepository: FilterRepository = koinInject()
     val watermarkRepository: WatermarkRepository = koinInject()
     val builtinFilterManager: BuiltinFilterManager = koinInject()
@@ -129,6 +136,17 @@ fun RecipeRoomScreen(
     val importLutUseCase: ImportLutUseCase = koinInject()
     val logger: LogManager = koinInject()
     val scope = rememberCoroutineScope()
+
+    var useBlur by remember { mutableStateOf(settingsManager.getUseBlurSync()) }
+    LaunchedEffect(Unit) {
+        settingsManager.useBlur.collect { useBlur = it }
+    }
+    var internalImportTrigger by remember { mutableStateOf(0L) }
+    var internalCreateTrigger by remember { mutableStateOf(0L) }
+
+    val scrollBehavior = MiuixScrollBehavior(rememberTopAppBarState())
+    val backdrop = rememberLutistaBlurBackdrop(useBlur)
+    val barColor = backdrop.getAppBarColor()
 
     val tabs = RecipeTab.entries.map { it.label }
 
@@ -212,8 +230,8 @@ fun RecipeRoomScreen(
         uri?.let { handleImport(it, context, scope, importLutUseCase, filterRepository, logger) }
     }
 
-    LaunchedEffect(importTrigger) {
-        if (importTrigger > 0) {
+    LaunchedEffect(internalImportTrigger) {
+        if (internalImportTrigger > 0) {
             if (selectedSubTab == 1) {
                 // Watermark tab: create new watermark
                 val newId = watermarkRepository.createDefault()
@@ -224,8 +242,8 @@ fun RecipeRoomScreen(
         }
     }
 
-    LaunchedEffect(createTrigger) {
-        if (createTrigger > 0) {
+    LaunchedEffect(internalCreateTrigger) {
+        if (internalCreateTrigger > 0) {
             if (selectedSubTab == 1) {
                 val existingNames = watermarksFromDb.map { it.name }
                 val name = nextAutoName("新边框水印", existingNames)
@@ -294,164 +312,203 @@ fun RecipeRoomScreen(
         }
     }
 
-    Column(
-        modifier = modifier.fillMaxSize()
-    ) {
-        TabRowWithContour(
-            tabs = tabs,
-            selectedTabIndex = selectedSubTab,
-            onTabSelected = { onSubTabChange(it) },
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-        )
+    var headerHeightPx by remember { mutableIntStateOf(0) }
+    val density = LocalDensity.current
+    val headerHeightDp = with(density) { headerHeightPx.toDp() }
 
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Recipe list fills the entire Box, including the area behind the header. When the
+        // user scrolls, items pass under the header overlay — that scrolling content is exactly
+        // what `layerBackdrop` captures and `textureBlur` on the header samples, so the blur
+        // shows real list content rather than a blank surface color.
         key(selectedSubTab) {
             RecipeList(
                 items = currentList,
                 isWatermarkTab = isWatermarkTab,
-            onMove = { from, to ->
-                if (selectedSubTab == 0) {
-                    val item = filters.removeAt(from.index)
-                    filters.add(to.index, item)
-                } else {
-                    val item = watermarks.removeAt(from.index)
-                    watermarks.add(to.index, item)
-                }
-            },
-            onEditClick = { item ->
-                if (item.type == RecipeTab.WATERMARK) {
-                    onEditWatermark(item.id)
-                } else if (item.isBuiltIn) {
-                    scope.launch {
-                        val copy = builtinFilterManager.copyBuiltinFilter(item.id)
-                        if (copy != null) {
-                            Toast.makeText(context, "已创建\"${copy.name}\"滤镜", Toast.LENGTH_SHORT).show()
-                            onEditFilter(copy.id)
-                        }
+                onMove = { from, to ->
+                    if (selectedSubTab == 0) {
+                        val item = filters.removeAt(from.index)
+                        filters.add(to.index, item)
+                    } else {
+                        val item = watermarks.removeAt(from.index)
+                        watermarks.add(to.index, item)
                     }
-                } else {
-                    onEditFilter(item.id)
-                }
-            },
-            onMoreAction = { item, action ->
-                when (action) {
-                    MoreAction.TOGGLE_ENABLE -> {
+                },
+                onEditClick = { item ->
+                    if (item.type == RecipeTab.WATERMARK) {
+                        onEditWatermark(item.id)
+                    } else if (item.isBuiltIn) {
                         scope.launch {
-                            if (selectedSubTab == 0) {
-                                filterRepository.getFilterById(item.id)?.let {
-                                    filterRepository.update(it.copy(isEnabled = !it.isEnabled))
+                            val copy = builtinFilterManager.copyBuiltinFilter(item.id)
+                            if (copy != null) {
+                                Toast.makeText(context, "已创建\"${copy.name}\"滤镜", Toast.LENGTH_SHORT).show()
+                                onEditFilter(copy.id)
+                            }
+                        }
+                    } else {
+                        onEditFilter(item.id)
+                    }
+                },
+                onMoreAction = { item, action ->
+                    when (action) {
+                        MoreAction.TOGGLE_ENABLE -> {
+                            scope.launch {
+                                if (selectedSubTab == 0) {
+                                    filterRepository.getFilterById(item.id)?.let {
+                                        filterRepository.update(it.copy(isEnabled = !it.isEnabled))
+                                    }
+                                } else {
+                                    watermarkRepository.getWatermarkById(item.id)?.let {
+                                        watermarkRepository.update(it.copy(isEnabled = !it.isEnabled))
+                                    }
+                                }
+                            }
+                        }
+                        MoreAction.RENAME -> {
+                            renameItem = item
+                            renameText = item.name
+                        }
+                        MoreAction.COPY -> {
+                            if (item.type == RecipeTab.WATERMARK) {
+                                scope.launch {
+                                    val entity = watermarkRepository.getWatermarkById(item.id)
+                                    if (entity != null) {
+                                        val newName = "${item.name}-拷贝"
+                                        val newEntity = entity.copy(id = 0, name = newName, createdAt = System.currentTimeMillis())
+                                        watermarkRepository.insert(newEntity)
+                                        Toast.makeText(context, "已复制: $newName", Toast.LENGTH_SHORT).show()
+                                    }
                                 }
                             } else {
-                                watermarkRepository.getWatermarkById(item.id)?.let {
-                                    watermarkRepository.update(it.copy(isEnabled = !it.isEnabled))
+                                scope.launch {
+                                    val filterEntity = filterRepository.getFilterById(item.id)
+                                    if (filterEntity != null) {
+                                        if (filterEntity.isBuiltIn) {
+                                            builtinFilterManager.copyBuiltinFilter(item.id)
+                                        } else {
+                                            val baseName = item.name
+                                            val allFilters = filterRepository.getAllFilters().first()
+                                            val copyNum = allFilters
+                                                .mapNotNull { e ->
+                                                    val prefix = "${baseName}-拷贝"
+                                                    if (e.name.startsWith(prefix))
+                                                        e.name.removePrefix(prefix).toIntOrNull()
+                                                    else null
+                                                }
+                                                .maxOrNull()
+                                                ?.plus(1) ?: 1
+                                            val newName = "${baseName}-拷贝$copyNum"
+                                            val newEntity = filterEntity.copy(
+                                                id = 0,
+                                                name = newName,
+                                                isBuiltIn = false,
+                                                createdAt = System.currentTimeMillis(),
+                                                updatedAt = System.currentTimeMillis()
+                                            )
+                                            filterRepository.insert(newEntity)
+                                        }
+                                    }
                                 }
                             }
                         }
-                    }
-                    MoreAction.RENAME -> {
-                        renameItem = item
-                        renameText = item.name
-                    }
-                    MoreAction.COPY -> {
-                        if (item.type == RecipeTab.WATERMARK) {
-                            scope.launch {
-                                val entity = watermarkRepository.getWatermarkById(item.id)
-                                if (entity != null) {
-                                    val newName = "${item.name}-拷贝"
-                                    val newEntity = entity.copy(id = 0, name = newName, createdAt = System.currentTimeMillis())
-                                    watermarkRepository.insert(newEntity)
-                                    Toast.makeText(context, "已复制: $newName", Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                        } else {
-                            scope.launch {
-                                val filterEntity = filterRepository.getFilterById(item.id)
-                                if (filterEntity != null) {
-                                    if (filterEntity.isBuiltIn) {
-                                        builtinFilterManager.copyBuiltinFilter(item.id)
+                        MoreAction.EXPORT_LUT -> {
+                            pendingExport = PendingExport(item.id, ExportFilterUseCase.ExportType.UNIFIED_LUT)
+                            exportLutLauncher.launch("${item.name}_unified.cube")
+                        }
+                        MoreAction.EXPORT_CONFIG -> {
+                            pendingExport = PendingExport(item.id, ExportFilterUseCase.ExportType.FILTER_CONFIG)
+                            exportConfigLauncher.launch("${item.name}_config.zip")
+                        }
+                        MoreAction.DELETE -> {
+                            if (!item.isBuiltIn) {
+                                scope.launch {
+                                    if (item.type == RecipeTab.WATERMARK) {
+                                        watermarkRepository.deleteById(item.id)
                                     } else {
-                                        val baseName = item.name
-                                        val allFilters = filterRepository.getAllFilters().first()
-                                        val copyNum = allFilters
-                                            .mapNotNull { e ->
-                                                val prefix = "${baseName}-拷贝"
-                                                if (e.name.startsWith(prefix))
-                                                    e.name.removePrefix(prefix).toIntOrNull()
-                                                else null
-                                            }
-                                            .maxOrNull()
-                                            ?.plus(1) ?: 1
-                                        val newName = "${baseName}-拷贝$copyNum"
-                                        val newEntity = filterEntity.copy(
-                                            id = 0,
-                                            name = newName,
-                                            isBuiltIn = false,
-                                            createdAt = System.currentTimeMillis(),
-                                            updatedAt = System.currentTimeMillis()
-                                        )
-                                        filterRepository.insert(newEntity)
+                                        filterRepository.deleteById(item.id)
                                     }
                                 }
                             }
                         }
                     }
-                    MoreAction.EXPORT_LUT -> {
-                        pendingExport = PendingExport(item.id, ExportFilterUseCase.ExportType.UNIFIED_LUT)
-                        exportLutLauncher.launch("${item.name}_unified.cube")
+                },
+                modifier = Modifier
+                    .then(backdrop?.let { Modifier.layerBackdrop(it) } ?: Modifier)
+                    .fillMaxSize()
+                    .nestedScroll(scrollBehavior.nestedScrollConnection),
+                contentPadding = PaddingValues(
+                    top = headerHeightDp,
+                    bottom = 16.dp
+                )
+            )
+        }
+
+        // Header overlay — TopAppBar + TabRow. Sibling of the LazyColumn inside the same Box,
+        // so they share the coordinate space. `lutistaBlurEffect` samples the backdrop captured
+        // on the LazyColumn; scrolling items pass under the header and show as blurred content.
+        Column(
+            modifier = Modifier
+                .lutistaBlurEffect(backdrop)
+                .background(barColor)
+                .onGloballyPositioned { coordinates ->
+                    headerHeightPx = coordinates.size.height
+                }
+        ) {
+            TopAppBar(
+                color = barColor,
+                title = "配方室",
+                largeTitle = "配方室",
+                scrollBehavior = scrollBehavior,
+                actions = {
+                    IconButton(onClick = { internalCreateTrigger++ }) {
+                        Icon(
+                            imageVector = MiuixIcons.Add,
+                            contentDescription = "新建",
+                            tint = MiuixTheme.colorScheme.onSurface
+                        )
                     }
-                    MoreAction.EXPORT_CONFIG -> {
-                        pendingExport = PendingExport(item.id, ExportFilterUseCase.ExportType.FILTER_CONFIG)
-                        exportConfigLauncher.launch("${item.name}_config.zip")
+                    IconButton(onClick = { internalImportTrigger++ }) {
+                        Icon(
+                            imageVector = MiuixIcons.Import,
+                            contentDescription = "导入",
+                            tint = MiuixTheme.colorScheme.onSurface
+                        )
                     }
-                    MoreAction.DELETE -> {
-                        if (!item.isBuiltIn) {
-                            scope.launch {
-                                if (item.type == RecipeTab.WATERMARK) {
-                                    watermarkRepository.deleteById(item.id)
-                                } else {
-                                    filterRepository.deleteById(item.id)
-                                }
+                }
+            )
+            TabRowWithContour(
+                tabs = tabs,
+                selectedTabIndex = selectedSubTab,
+                onTabSelected = { onSubTabChange(it) },
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            )
+        }
+
+        // Rename dialog
+        val renameTarget = renameItem
+        if (renameTarget != null) {
+            RenameDialog(
+                currentName = renameText,
+                onNameChange = { renameText = it },
+                onConfirm = {
+                    scope.launch {
+                        if (renameTarget.type == RecipeTab.WATERMARK) {
+                            val entity = watermarkRepository.getWatermarkById(renameTarget.id)
+                            if (entity != null) {
+                                watermarkRepository.update(entity.copy(name = renameText.trim()))
+                            }
+                        } else {
+                            val entity = filterRepository.getFilterById(renameTarget.id)
+                            if (entity != null) {
+                                filterRepository.update(entity.copy(name = renameText.trim()))
                             }
                         }
+                        renameItem = null
                     }
-                }
-            },
-            modifier = Modifier
-                .fillMaxSize()
-                .then(
-                    if (scrollBehavior != null) {
-                        Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
-                    } else {
-                        Modifier
-                    }
-                )
-        )
-    }
-    }
-
-    // Rename dialog
-    val renameTarget = renameItem
-    if (renameTarget != null) {
-        RenameDialog(
-            currentName = renameText,
-            onNameChange = { renameText = it },
-            onConfirm = {
-                scope.launch {
-                    if (renameTarget.type == RecipeTab.WATERMARK) {
-                        val entity = watermarkRepository.getWatermarkById(renameTarget.id)
-                        if (entity != null) {
-                            watermarkRepository.update(entity.copy(name = renameText.trim()))
-                        }
-                    } else {
-                        val entity = filterRepository.getFilterById(renameTarget.id)
-                        if (entity != null) {
-                            filterRepository.update(entity.copy(name = renameText.trim()))
-                        }
-                    }
-                    renameItem = null
-                }
-            },
-            onDismiss = { renameItem = null }
-        )
+                },
+                onDismiss = { renameItem = null }
+            )
+        }
     }
 }
 
@@ -618,7 +675,8 @@ private fun RecipeList(
     onMove: suspend CoroutineScope.(from: LazyListItemInfo, to: LazyListItemInfo) -> Unit,
     onEditClick: (RecipeItem) -> Unit,
     onMoreAction: (RecipeItem, MoreAction) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    contentPadding: PaddingValues = PaddingValues(bottom = 16.dp)
 ) {
     val lazyListState = rememberLazyListState()
     val reorderableState = rememberReorderableLazyListState(lazyListState, onMove = onMove)
@@ -626,7 +684,7 @@ private fun RecipeList(
     LazyColumn(
         state = lazyListState,
         modifier = modifier.overScrollVertical(),
-        contentPadding = PaddingValues(bottom = 16.dp)
+        contentPadding = contentPadding
     ) {
         itemsIndexed(items, key = { _, item -> item.id }) { _, item ->
             ReorderableItem(reorderableState, key = item.id) { isDragging ->

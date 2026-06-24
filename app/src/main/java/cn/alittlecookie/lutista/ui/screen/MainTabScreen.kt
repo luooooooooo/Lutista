@@ -1,20 +1,28 @@
 package cn.alittlecookie.lutista.ui.screen
 
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
+import cn.alittlecookie.lutista.manager.SettingsManager
+import cn.alittlecookie.lutista.ui.theme.getAppBarColor
+import cn.alittlecookie.lutista.ui.theme.lutistaBlurEffect
+import cn.alittlecookie.lutista.ui.theme.rememberLutistaBlurBackdrop
+import kotlinx.coroutines.launch
+import org.koin.compose.koinInject
 import top.yukonga.miuix.kmp.basic.NavigationBar
 import top.yukonga.miuix.kmp.basic.NavigationBarItem
 import top.yukonga.miuix.kmp.basic.Scaffold
-import top.yukonga.miuix.kmp.basic.TopAppBar
-import top.yukonga.miuix.kmp.basic.rememberTopAppBarState
+import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Album
 import top.yukonga.miuix.kmp.icon.extended.Filter
@@ -34,71 +42,75 @@ fun MainTabScreen(
     onEditWatermark: (Long) -> Unit = {},
     onMonitorFolderClick: () -> Unit = {},
     onOutputFolderClick: () -> Unit = {},
+    onThemeSettingsClick: () -> Unit = {},
     initialPage: Int = 0,
     recipeSubTab: Int = 0,
     onRecipeSubTabChange: (Int) -> Unit = {}
 ) {
-    var selectedPage by rememberSaveable { mutableIntStateOf(initialPage) }
     val pages = MainPage.entries
-    val scrollBehavior = MiuixScrollBehavior(rememberTopAppBarState())
-    var recipeImportTrigger by remember { mutableLongStateOf(0L) }
-    var recipeCreateTrigger by remember { mutableLongStateOf(0L) }
+    val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { 3 })
+    val coroutineScope = rememberCoroutineScope()
+
+    val settingsManager: SettingsManager = koinInject()
+    var useBlur by remember { mutableStateOf(settingsManager.getUseBlurSync()) }
+    LaunchedEffect(Unit) {
+        settingsManager.useBlur.collect { useBlur = it }
+    }
+
+    val bottomBarBackdrop = rememberLutistaBlurBackdrop(useBlur)
+    val barColor = bottomBarBackdrop.getAppBarColor()
 
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = pages[selectedPage].label,
-                largeTitle = pages[selectedPage].label,
-                scrollBehavior = scrollBehavior,
-                actions = {
-                    if (selectedPage == 1) {
-                        RecipeRoomTopBar(
-                            onCreateClick = { recipeCreateTrigger++ },
-                            onImportClick = { recipeImportTrigger++ }
+        bottomBar = {
+            Box(
+                modifier = Modifier
+                    .lutistaBlurEffect(bottomBarBackdrop)
+                    .background(barColor)
+            ) {
+                NavigationBar(color = barColor) {
+                    pages.forEachIndexed { index, page ->
+                        NavigationBarItem(
+                            selected = pagerState.currentPage == index,
+                            onClick = {
+                                coroutineScope.launch {
+                                    pagerState.animateScrollToPage(index)
+                                }
+                            },
+                            icon = page.icon,
+                            label = page.label
                         )
                     }
-                }
-            )
-        },
-        bottomBar = {
-            NavigationBar {
-                pages.forEachIndexed { index, page ->
-                    NavigationBarItem(
-                        selected = selectedPage == index,
-                        onClick = { selectedPage = index },
-                        icon = page.icon,
-                        label = page.label
-                    )
                 }
             }
         }
     ) { paddingValues ->
-        when (selectedPage) {
-            0 -> HomeScreen(
-                modifier = Modifier.padding(top = paddingValues.calculateTopPadding()),
-                scrollBehavior = scrollBehavior,
-                onPhotoSelected = onPhotoSelected,
-                launchPicker = launchPicker,
-                onMonitorFolderClick = onMonitorFolderClick,
-                onOutputFolderClick = onOutputFolderClick
-            )
-            1 -> RecipeRoomScreen(
-                modifier = Modifier.padding(
-                    top = paddingValues.calculateTopPadding(),
-                    bottom = paddingValues.calculateBottomPadding()
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier
+                .fillMaxSize()
+                .then(
+                    bottomBarBackdrop?.let { Modifier.layerBackdrop(it) } ?: Modifier
                 ),
-                scrollBehavior = scrollBehavior,
-                onEditFilter = onEditFilter,
-                onEditWatermark = onEditWatermark,
-                importTrigger = recipeImportTrigger,
-                createTrigger = recipeCreateTrigger,
-                selectedSubTab = recipeSubTab,
-                onSubTabChange = onRecipeSubTabChange
-            )
-            2 -> SettingsScreen(
-                modifier = Modifier.padding(top = paddingValues.calculateTopPadding()),
-                scrollBehavior = scrollBehavior
-            )
+            userScrollEnabled = true,
+            beyondViewportPageCount = 1
+        ) { page ->
+            when (page) {
+                0 -> HomeScreen(
+                    onPhotoSelected = onPhotoSelected,
+                    launchPicker = launchPicker,
+                    onMonitorFolderClick = onMonitorFolderClick,
+                    onOutputFolderClick = onOutputFolderClick
+                )
+                1 -> RecipeRoomScreen(
+                    onEditFilter = onEditFilter,
+                    onEditWatermark = onEditWatermark,
+                    selectedSubTab = recipeSubTab,
+                    onSubTabChange = onRecipeSubTabChange
+                )
+                2 -> SettingsScreen(
+                    onThemeSettingsClick = onThemeSettingsClick
+                )
+            }
         }
     }
 }

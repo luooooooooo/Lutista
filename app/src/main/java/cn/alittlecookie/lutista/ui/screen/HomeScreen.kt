@@ -43,6 +43,9 @@ import cn.alittlecookie.lutista.data.repository.FilterRepository
 import cn.alittlecookie.lutista.data.repository.WatermarkRepository
 import cn.alittlecookie.lutista.manager.SettingsManager
 import cn.alittlecookie.lutista.service.FileMonitorService
+import cn.alittlecookie.lutista.ui.theme.getAppBarColor
+import cn.alittlecookie.lutista.ui.theme.lutistaBlurEffect
+import cn.alittlecookie.lutista.ui.theme.rememberLutistaBlurBackdrop
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -51,9 +54,13 @@ import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.DropdownItem
 import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.ScrollBehavior
+import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
+import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Switch
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.basic.TopAppBar
+import top.yukonga.miuix.kmp.basic.rememberTopAppBarState
+import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Close2
 import top.yukonga.miuix.kmp.preference.ArrowPreference
@@ -65,8 +72,6 @@ import top.yukonga.miuix.kmp.utils.overScrollVertical
 
 @Composable
 fun HomeScreen(
-    modifier: Modifier = Modifier,
-    scrollBehavior: ScrollBehavior? = null,
     onPhotoSelected: (List<String>) -> Unit = {},
     launchPicker: () -> Unit = {},
     onMonitorFolderClick: () -> Unit = {},
@@ -192,18 +197,38 @@ fun HomeScreen(
         }
     }
 
+    var useBlur by remember { mutableStateOf(settingsManager.getUseBlurSync()) }
+    LaunchedEffect(Unit) {
+        settingsManager.useBlur.collect { useBlur = it }
+    }
+
+    val scrollBehavior = MiuixScrollBehavior(rememberTopAppBarState())
+    val backdrop = rememberLutistaBlurBackdrop(useBlur)
+    val barColor = backdrop.getAppBarColor()
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                modifier = Modifier.lutistaBlurEffect(backdrop),
+                color = barColor,
+                title = "主页",
+                largeTitle = "主页",
+                scrollBehavior = scrollBehavior
+            )
+        }
+    ) { paddingValues ->
     LazyColumn(
-        modifier = modifier
+        modifier = Modifier
+            .then(backdrop?.let { Modifier.layerBackdrop(it) } ?: Modifier)
             .fillMaxSize()
-            .overScrollVertical()
-            .then(
-                if (scrollBehavior != null) {
-                    Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
-                } else {
-                    Modifier
-                }
-            ),
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
+            .nestedScroll(scrollBehavior.nestedScrollConnection)
+            .overScrollVertical(),
+        contentPadding = PaddingValues(
+            top = paddingValues.calculateTopPadding() + 12.dp,
+            bottom = 12.dp,
+            start = 12.dp,
+            end = 12.dp
+        ),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
@@ -276,6 +301,7 @@ fun HomeScreen(
                 }
             )
         }
+    }
     }
 }
 

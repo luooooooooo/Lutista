@@ -200,7 +200,25 @@ class SettingsManager(
         dataStore.data.first()[PROCESSED_COUNT_KEY] ?: 0
     }
 
+    fun getThemeModeSync(): ThemeMode = runBlocking {
+        dataStore.data.first()[THEME_MODE_KEY]?.let { ThemeMode.valueOf(it) } ?: ThemeMode.SYSTEM
+    }
+
+    // 模糊效果开关
+    val useBlur: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[USE_BLUR_KEY] ?: false
+    }
+
+    suspend fun setUseBlur(useBlur: Boolean) {
+        dataStore.edit { prefs -> prefs[USE_BLUR_KEY] = useBlur }
+    }
+
+    fun getUseBlurSync(): Boolean = runBlocking {
+        dataStore.data.first()[USE_BLUR_KEY] ?: false
+    }
+
     companion object {
+        private val USE_BLUR_KEY = booleanPreferencesKey("use_blur")
         private val OUTPUT_FORMAT_KEY = stringPreferencesKey("output_format")
         private val JPG_QUALITY_KEY = intPreferencesKey("jpg_quality")
         private val PNG_COMPRESSION_KEY = intPreferencesKey("png_compression")

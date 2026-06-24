@@ -24,12 +24,19 @@ import cn.alittlecookie.lutista.manager.LogManager
 import cn.alittlecookie.lutista.manager.LutPrecision
 import cn.alittlecookie.lutista.manager.OutputFormat
 import cn.alittlecookie.lutista.manager.SettingsManager
+import cn.alittlecookie.lutista.ui.theme.getAppBarColor
+import cn.alittlecookie.lutista.ui.theme.lutistaBlurEffect
+import cn.alittlecookie.lutista.ui.theme.rememberLutistaBlurBackdrop
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.DropdownItem
-import top.yukonga.miuix.kmp.basic.ScrollBehavior
+import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
+import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTitle
+import top.yukonga.miuix.kmp.basic.TopAppBar
+import top.yukonga.miuix.kmp.basic.rememberTopAppBarState
+import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlaySpinnerPreference
 import top.yukonga.miuix.kmp.preference.SliderPreference
@@ -39,8 +46,7 @@ import kotlin.math.roundToInt
 
 @Composable
 fun SettingsScreen(
-    modifier: Modifier = Modifier,
-    scrollBehavior: ScrollBehavior? = null
+    onThemeSettingsClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val settingsManager: SettingsManager = koinInject()
@@ -77,18 +83,38 @@ fun SettingsScreen(
         }
     }
 
+    var useBlur by remember { mutableStateOf(settingsManager.getUseBlurSync()) }
+    LaunchedEffect(Unit) {
+        settingsManager.useBlur.collect { useBlur = it }
+    }
+
+    val scrollBehavior = MiuixScrollBehavior(rememberTopAppBarState())
+    val backdrop = rememberLutistaBlurBackdrop(useBlur)
+    val barColor = backdrop.getAppBarColor()
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                modifier = Modifier.lutistaBlurEffect(backdrop),
+                color = barColor,
+                title = "设置",
+                largeTitle = "设置",
+                scrollBehavior = scrollBehavior
+            )
+        }
+    ) { paddingValues ->
     LazyColumn(
-        modifier = modifier
+        modifier = Modifier
+            .then(backdrop?.let { Modifier.layerBackdrop(it) } ?: Modifier)
             .fillMaxSize()
-            .overScrollVertical()
-            .then(
-                if (scrollBehavior != null) {
-                    Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
-                } else {
-                    Modifier
-                }
-            ),
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
+            .nestedScroll(scrollBehavior.nestedScrollConnection)
+            .overScrollVertical(),
+        contentPadding = PaddingValues(
+            top = paddingValues.calculateTopPadding() + 12.dp,
+            bottom = 12.dp,
+            start = 12.dp,
+            end = 12.dp
+        ),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
@@ -168,7 +194,7 @@ fun SettingsScreen(
             Card {
                 ArrowPreference(
                     title = "主题设置",
-                    onClick = { /* TODO: 主题设置页面 */ }
+                    onClick = onThemeSettingsClick
                 )
 
                 SwitchPreference(
@@ -214,5 +240,6 @@ fun SettingsScreen(
                 )
             }
         }
+    }
     }
 }

@@ -5,7 +5,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import cn.alittlecookie.lutista.ui.screen.MainScreen
-import cn.alittlecookie.lutista.ui.theme.LutistaTheme
 
 class MainActivity : ComponentActivity() {
 
@@ -13,9 +12,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            LutistaTheme {
-                MainScreen()
-            }
+            MainScreen()
         }
     }
 }

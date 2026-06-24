@@ -35,6 +35,7 @@ import androidx.navigation3.runtime.rememberDecoratedNavEntries
 import androidx.navigation3.ui.NavDisplay
 import cn.alittlecookie.lutista.gpu.VulkanGpuEngine
 import cn.alittlecookie.lutista.manager.SettingsManager
+import cn.alittlecookie.lutista.ui.theme.LutistaTheme
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 import top.yukonga.miuix.kmp.basic.Button
@@ -48,10 +49,25 @@ sealed interface Screen : NavKey {
     data class PhotoProcess(val uris: List<String>) : Screen
     data class FilterEditor(val filterId: Long) : Screen
     data class WatermarkEditor(val watermarkId: Long) : Screen
+    data object ThemeSettings : Screen
 }
 
 @Composable
 fun MainScreen() {
+    val settingsManager: SettingsManager = koinInject()
+
+    var themeMode by remember { mutableStateOf(settingsManager.getThemeModeSync()) }
+    LaunchedEffect(Unit) {
+        settingsManager.themeMode.collect { themeMode = it }
+    }
+
+    LutistaTheme(themeMode = themeMode) {
+        MainScreenContent()
+    }
+}
+
+@Composable
+private fun MainScreenContent() {
     val vulkanGpuEngine: VulkanGpuEngine = koinInject()
     val context = LocalContext.current
 
@@ -187,7 +203,8 @@ fun MainScreen() {
                     onOutputFolderClick = { outputFolderLauncher.launch(null) },
                     initialPage = if (returnToRecipeTab) { returnToRecipeTab = false; 1 } else 0,
                     recipeSubTab = recipeSubTab,
-                    onRecipeSubTabChange = { recipeSubTab = it }
+                    onRecipeSubTabChange = { recipeSubTab = it },
+                    onThemeSettingsClick = { backStack.add(Screen.ThemeSettings) }
                 )
             }
             entry<Screen.PhotoProcess> { screen ->
@@ -214,6 +231,11 @@ fun MainScreen() {
                         returnToRecipeTab = true
                         backStack.removeLast()
                     }
+                )
+            }
+            entry<Screen.ThemeSettings> {
+                ThemeSettingsPage(
+                    onBackClick = { backStack.removeLast() }
                 )
             }
         }
