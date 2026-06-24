@@ -180,9 +180,11 @@ object FilterConfigJson {
             grainJson = grainConfigToJson(this.grainConfig),
             unifiedLutPath = existing?.unifiedLutPath,
             unifiedLutHash = existing?.unifiedLutHash,
+            isEnabled = existing?.isEnabled ?: true,
             isDefault = existing?.isDefault ?: false,
             isBuiltIn = existing?.isBuiltIn ?: false,
             filterDirPath = existing?.filterDirPath,
+            sortOrder = existing?.sortOrder ?: 0,
             createdAt = existing?.createdAt ?: System.currentTimeMillis(),
             updatedAt = System.currentTimeMillis()
         )

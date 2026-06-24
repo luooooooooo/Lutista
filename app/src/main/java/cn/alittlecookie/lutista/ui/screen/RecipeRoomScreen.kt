@@ -74,6 +74,7 @@ import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.DropdownDefaults
 import top.yukonga.miuix.kmp.basic.DropdownImpl
+import top.yukonga.miuix.kmp.basic.DropdownItem
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.ListPopupColumn
@@ -156,6 +157,7 @@ fun RecipeRoomScreen(
     // Rename dialog state
     var renameItem by remember { mutableStateOf<RecipeItem?>(null) }
     var renameText by remember { mutableStateOf("") }
+    var showTopBarMorePopup by remember { mutableStateOf(false) }
 
     val filtersFromDb by filterRepository.getAllFilters().collectAsState(initial = emptyList())
     val watermarksFromDb by watermarkRepository.getAllWatermarks().collectAsState(initial = emptyList())
@@ -264,7 +266,7 @@ fun RecipeRoomScreen(
                 val existingNames = filtersFromDb.map { it.name }
                 val name = nextAutoName("新滤镜", existingNames)
                 scope.launch {
-                    val entity = FilterEntity(name = name)
+                    val entity = FilterEntity(name = name, sortOrder = -1)
                     val newId = filterRepository.insert(entity)
                     onEditFilter(newId)
                 }
@@ -470,12 +472,43 @@ fun RecipeRoomScreen(
                             tint = MiuixTheme.colorScheme.onSurface
                         )
                     }
-                    IconButton(onClick = { internalImportTrigger++ }) {
-                        Icon(
-                            imageVector = MiuixIcons.Import,
-                            contentDescription = "导入",
-                            tint = MiuixTheme.colorScheme.onSurface
-                        )
+                    Box {
+                        IconButton(onClick = { showTopBarMorePopup = true }) {
+                            Icon(
+                                imageVector = MiuixIcons.More,
+                                contentDescription = "更多",
+                                tint = MiuixTheme.colorScheme.onSurface
+                            )
+                        }
+                        OverlayListPopup(
+                            show = showTopBarMorePopup,
+                            onDismissRequest = { showTopBarMorePopup = false },
+                            alignment = PopupPositionProvider.Align.End
+                        ) {
+                            ListPopupColumn {
+                                val importItem = DropdownItem(
+                                    text = "导入",
+                                    icon = { modifier ->
+                                        Icon(
+                                            imageVector = MiuixIcons.Import,
+                                            contentDescription = null,
+                                            modifier = modifier,
+                                            tint = MiuixTheme.colorScheme.onSurface
+                                        )
+                                    }
+                                )
+                                DropdownImpl(
+                                    item = importItem,
+                                    optionSize = 1,
+                                    isSelected = false,
+                                    index = 0,
+                                    onSelectedIndexChange = {
+                                        showTopBarMorePopup = false
+                                        internalImportTrigger++
+                                    }
+                                )
+                            }
+                        }
                     }
                 }
             )
@@ -656,6 +689,7 @@ private suspend fun importFilterPackage(
                 vignetteStrength = json.optDouble("vignetteStrength", 0.0).toFloat(),
                 grainJson = json.optString("grainJson", "{}"),
                 isBuiltIn = false,
+                sortOrder = -1,
                 createdAt = System.currentTimeMillis(),
                 updatedAt = System.currentTimeMillis()
             )

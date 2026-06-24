@@ -88,7 +88,8 @@ class BuiltinFilterManager(
     }
 
     private suspend fun createBuiltinFilterEntities(releasedFilters: List<ReleasedFilter>) {
-        for (releasedFilter in releasedFilters) {
+        val sorted = releasedFilters.sortedBy { it.name.lowercase() }
+        for ((index, releasedFilter) in sorted.withIndex()) {
             try {
                 val existingFilter = filterRepository.getFilterByName(releasedFilter.name)
                 if (existingFilter != null) {
@@ -102,6 +103,7 @@ class BuiltinFilterManager(
                     lutConcentration1 = 1.0f,
                     isBuiltIn = true,
                     filterDirPath = releasedFilter.filterDir.absolutePath,
+                    sortOrder = index,
                     createdAt = System.currentTimeMillis(),
                     updatedAt = System.currentTimeMillis()
                 )
@@ -203,6 +205,7 @@ class BuiltinFilterManager(
             grainJson = filter.grainJson,
             isBuiltIn = false,
             filterDirPath = newDir.absolutePath,
+            sortOrder = -1,
             createdAt = System.currentTimeMillis(),
             updatedAt = System.currentTimeMillis()
         )
