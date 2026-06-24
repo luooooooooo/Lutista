@@ -78,25 +78,43 @@ fun HomeScreen(
     val scope = remember { CoroutineScope(Dispatchers.Main) }
 
     var isMonitorRunning by remember { mutableStateOf(false) }
-    val monitorRunningPersisted by settingsManager.monitorRunning.collectAsState(initial = false)
-    val processedCount by settingsManager.processedCount.collectAsState(initial = 0)
+    var monitorRunningPersisted by remember { mutableStateOf(settingsManager.getMonitorRunningSync()) }
+    var processedCount by remember { mutableIntStateOf(settingsManager.getProcessedCountSync()) }
 
     var isCameraMode by remember { mutableStateOf(false) }
-    var onlyNewFiles by remember { mutableStateOf(true) }
-    val onlyNewFilesPersisted by settingsManager.onlyNewFiles.collectAsState(initial = true)
+    var onlyNewFiles by remember { mutableStateOf(settingsManager.getOnlyNewFilesSync()) }
 
-    LaunchedEffect(onlyNewFilesPersisted) {
-        onlyNewFiles = onlyNewFilesPersisted
-    }
     var selectedFilterIndex by remember { mutableIntStateOf(0) }
     var selectedWatermarkIndex by remember { mutableIntStateOf(0) }
 
     val filtersFromDb by filterRepository.getEnabledFilters().collectAsState(initial = emptyList())
     val watermarksFromDb by watermarkRepository.getEnabledWatermarks().collectAsState(initial = emptyList())
-    val monitorPath by settingsManager.monitorPath.collectAsState(initial = "")
-    val outputPath by settingsManager.outputPath.collectAsState(initial = "")
-    val globalFilterId by settingsManager.globalFilterId.collectAsState(initial = 0L)
-    val globalWatermarkId by settingsManager.globalWatermarkId.collectAsState(initial = "none")
+    var monitorPath by remember { mutableStateOf(settingsManager.getMonitorPathSync()) }
+    var outputPath by remember { mutableStateOf(settingsManager.getOutputPathSync()) }
+    var globalFilterId by remember { mutableStateOf(settingsManager.getGlobalFilterIdSync()) }
+    var globalWatermarkId by remember { mutableStateOf(settingsManager.getGlobalWatermarkIdSync()) }
+
+    LaunchedEffect(Unit) {
+        settingsManager.monitorRunning.collect { monitorRunningPersisted = it }
+    }
+    LaunchedEffect(Unit) {
+        settingsManager.processedCount.collect { processedCount = it }
+    }
+    LaunchedEffect(Unit) {
+        settingsManager.onlyNewFiles.collect { onlyNewFiles = it }
+    }
+    LaunchedEffect(Unit) {
+        settingsManager.monitorPath.collect { monitorPath = it }
+    }
+    LaunchedEffect(Unit) {
+        settingsManager.outputPath.collect { outputPath = it }
+    }
+    LaunchedEffect(Unit) {
+        settingsManager.globalFilterId.collect { globalFilterId = it }
+    }
+    LaunchedEffect(Unit) {
+        settingsManager.globalWatermarkId.collect { globalWatermarkId = it }
+    }
 
     val filterOptions = remember(filtersFromDb) {
         buildList {

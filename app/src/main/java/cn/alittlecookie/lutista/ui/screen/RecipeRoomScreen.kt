@@ -1,5 +1,7 @@
 package cn.alittlecookie.lutista.ui.screen
 
+import android.content.Context
+import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -17,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListItemInfo
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -49,6 +52,7 @@ import cn.alittlecookie.lutista.manager.BuiltinFilterManager
 import cn.alittlecookie.lutista.manager.LogManager
 import cn.alittlecookie.lutista.watermark.model.BaseImageElement
 import cn.alittlecookie.lutista.watermark.model.Scene
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
@@ -72,10 +76,10 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Add
-import top.yukonga.miuix.kmp.icon.extended.Create
 import top.yukonga.miuix.kmp.icon.extended.Import
 import top.yukonga.miuix.kmp.icon.extended.More
 import top.yukonga.miuix.kmp.icon.extended.Sort
+import top.yukonga.miuix.kmp.icon.extended.Tune
 import top.yukonga.miuix.kmp.overlay.OverlayListPopup
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
@@ -452,9 +456,9 @@ fun RecipeRoomScreen(
 }
 
 private fun handleImport(
-    uri: android.net.Uri,
-    context: android.content.Context,
-    scope: kotlinx.coroutines.CoroutineScope,
+    uri: Uri,
+    context: Context,
+    scope: CoroutineScope,
     importLutUseCase: ImportLutUseCase,
     filterRepository: FilterRepository,
     logger: LogManager
@@ -524,8 +528,8 @@ private fun handleImport(
 }
 
 private suspend fun importFilterPackage(
-    context: android.content.Context,
-    uri: android.net.Uri,
+    context: Context,
+    uri: Uri,
     filterRepository: FilterRepository,
     logger: LogManager
 ) {
@@ -611,7 +615,7 @@ private suspend fun importFilterPackage(
 private fun RecipeList(
     items: List<RecipeItem>,
     isWatermarkTab: Boolean,
-    onMove: suspend kotlinx.coroutines.CoroutineScope.(from: androidx.compose.foundation.lazy.LazyListItemInfo, to: androidx.compose.foundation.lazy.LazyListItemInfo) -> Unit,
+    onMove: suspend CoroutineScope.(from: LazyListItemInfo, to: LazyListItemInfo) -> Unit,
     onEditClick: (RecipeItem) -> Unit,
     onMoreAction: (RecipeItem, MoreAction) -> Unit,
     modifier: Modifier = Modifier
@@ -668,7 +672,12 @@ private fun RecipeListItem(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+                .padding(
+                    start = 12.dp,
+                    top = 8.dp,
+                    end = 6.dp,
+                    bottom = 8.dp
+                ),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
@@ -678,7 +687,7 @@ private fun RecipeListItem(
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = MiuixIcons.Sort,
+                    imageVector = MiuixIcons.Demibold.Sort,
                     contentDescription = "拖拽排序",
                     tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                     modifier = Modifier.size(20.dp)
@@ -692,6 +701,7 @@ private fun RecipeListItem(
                     Text(
                         text = item.name,
                         style = MiuixTheme.textStyles.body2,
+                        fontWeight = FontWeight.Bold,
                         color = if (item.isEnabled) {
                             MiuixTheme.colorScheme.onSurface
                         } else {
@@ -730,7 +740,7 @@ private fun RecipeListItem(
                 modifier = Modifier.size(36.dp)
             ) {
                 Icon(
-                    imageVector = MiuixIcons.Create,
+                    imageVector = MiuixIcons.Demibold.Tune,
                     contentDescription = "编辑",
                     tint = MiuixTheme.colorScheme.onSurfaceVariantActions,
                     modifier = Modifier.size(20.dp)
@@ -743,7 +753,7 @@ private fun RecipeListItem(
                     modifier = Modifier.size(36.dp)
                 ) {
                     Icon(
-                        imageVector = MiuixIcons.More,
+                        imageVector = MiuixIcons.Demibold.More,
                         contentDescription = "更多",
                         tint = MiuixTheme.colorScheme.onSurfaceVariantActions,
                         modifier = Modifier.size(20.dp)

@@ -29,6 +29,10 @@ class SettingsManager(
         dataStore.edit { prefs -> prefs[OUTPUT_FORMAT_KEY] = format.name }
     }
 
+    fun getDefaultOutputFormatSync(): OutputFormat = runBlocking {
+        dataStore.data.first()[OUTPUT_FORMAT_KEY]?.let { OutputFormat.valueOf(it) } ?: OutputFormat.JPG
+    }
+
     // JPG 质量
     val jpgQuality: Flow<Int> = dataStore.data.map { prefs ->
         prefs[JPG_QUALITY_KEY] ?: 95
@@ -38,6 +42,10 @@ class SettingsManager(
         dataStore.edit { prefs -> prefs[JPG_QUALITY_KEY] = quality.coerceIn(60, 100) }
     }
 
+    fun getJpgQualitySync(): Int = runBlocking {
+        dataStore.data.first()[JPG_QUALITY_KEY] ?: 95
+    }
+
     // PNG 压缩等级
     val pngCompression: Flow<Int> = dataStore.data.map { prefs ->
         prefs[PNG_COMPRESSION_KEY] ?: 6
@@ -45,6 +53,10 @@ class SettingsManager(
 
     suspend fun setPngCompression(level: Int) {
         dataStore.edit { prefs -> prefs[PNG_COMPRESSION_KEY] = level.coerceIn(0, 9) }
+    }
+
+    fun getPngCompressionSync(): Int = runBlocking {
+        dataStore.data.first()[PNG_COMPRESSION_KEY] ?: 6
     }
 
     // LUT 精度
@@ -91,6 +103,10 @@ class SettingsManager(
         dataStore.edit { prefs -> prefs[MONITOR_PATH_KEY] = path }
     }
 
+    fun getMonitorPathSync(): String = runBlocking {
+        dataStore.data.first()[MONITOR_PATH_KEY] ?: ""
+    }
+
     // 内置滤镜版本号
     val builtinFilterVersion: Flow<Int> = dataStore.data.map { prefs ->
         prefs[BUILTIN_FILTER_VERSION_KEY] ?: 0
@@ -109,6 +125,10 @@ class SettingsManager(
         dataStore.edit { prefs -> prefs[GLOBAL_FILTER_ID_KEY] = id.toString() }
     }
 
+    fun getGlobalFilterIdSync(): Long = runBlocking {
+        dataStore.data.first()[GLOBAL_FILTER_ID_KEY]?.toLongOrNull() ?: 0L
+    }
+
     // 全局边框水印 ID
     val globalWatermarkId: Flow<String> = dataStore.data.map { prefs ->
         prefs[GLOBAL_WATERMARK_ID_KEY] ?: "none"
@@ -116,6 +136,10 @@ class SettingsManager(
 
     suspend fun setGlobalWatermarkId(id: String) {
         dataStore.edit { prefs -> prefs[GLOBAL_WATERMARK_ID_KEY] = id }
+    }
+
+    fun getGlobalWatermarkIdSync(): String = runBlocking {
+        dataStore.data.first()[GLOBAL_WATERMARK_ID_KEY] ?: "none"
     }
 
     // 自定义输出文件夹 (SAF URI 字符串或文件系统路径)
@@ -140,6 +164,10 @@ class SettingsManager(
         dataStore.edit { prefs -> prefs[MONITOR_RUNNING_KEY] = running }
     }
 
+    fun getMonitorRunningSync(): Boolean = runBlocking {
+        dataStore.data.first()[MONITOR_RUNNING_KEY] ?: false
+    }
+
     // 仅处理新增文件开关
     val onlyNewFiles: Flow<Boolean> = dataStore.data.map { prefs ->
         prefs[ONLY_NEW_FILES_KEY] ?: true
@@ -147,6 +175,10 @@ class SettingsManager(
 
     suspend fun setOnlyNewFiles(value: Boolean) {
         dataStore.edit { prefs -> prefs[ONLY_NEW_FILES_KEY] = value }
+    }
+
+    fun getOnlyNewFilesSync(): Boolean = runBlocking {
+        dataStore.data.first()[ONLY_NEW_FILES_KEY] ?: true
     }
 
     // 已处理图片计数
@@ -162,6 +194,10 @@ class SettingsManager(
 
     suspend fun resetProcessedCount() {
         dataStore.edit { prefs -> prefs[PROCESSED_COUNT_KEY] = 0 }
+    }
+
+    fun getProcessedCountSync(): Int = runBlocking {
+        dataStore.data.first()[PROCESSED_COUNT_KEY] ?: 0
     }
 
     companion object {
