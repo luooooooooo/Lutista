@@ -102,6 +102,7 @@ fun MainTabScreen(
                     onOutputFolderClick = onOutputFolderClick
                 )
                 1 -> RecipeRoomScreen(
+                    bottomBarHeight = paddingValues.calculateBottomPadding(),
                     onEditFilter = onEditFilter,
                     onEditWatermark = onEditWatermark,
                     selectedSubTab = recipeSubTab,

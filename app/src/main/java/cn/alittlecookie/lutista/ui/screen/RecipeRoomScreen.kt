@@ -43,6 +43,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cn.alittlecookie.lutista.data.database.entity.FilterEntity
@@ -122,10 +123,12 @@ enum class MoreAction {
 
 @Composable
 fun RecipeRoomScreen(
+    modifier: Modifier = Modifier,
     onEditFilter: (Long) -> Unit = {},
     onEditWatermark: (Long) -> Unit = {},
     selectedSubTab: Int = 0,
-    onSubTabChange: (Int) -> Unit = {}
+    onSubTabChange: (Int) -> Unit = {},
+    bottomBarHeight: Dp = 0.dp
 ) {
     val context = LocalContext.current
     val settingsManager: SettingsManager = koinInject()
@@ -316,7 +319,7 @@ fun RecipeRoomScreen(
     val density = LocalDensity.current
     val headerHeightDp = with(density) { headerHeightPx.toDp() }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(modifier = modifier.fillMaxSize()) {
         // Recipe list fills the entire Box, including the area behind the header. When the
         // user scrolls, items pass under the header overlay — that scrolling content is exactly
         // what `layerBackdrop` captures and `textureBlur` on the header samples, so the blur
@@ -438,7 +441,7 @@ fun RecipeRoomScreen(
                     .nestedScroll(scrollBehavior.nestedScrollConnection),
                 contentPadding = PaddingValues(
                     top = headerHeightDp,
-                    bottom = 16.dp
+                    bottom = bottomBarHeight + 16.dp
                 )
             )
         }

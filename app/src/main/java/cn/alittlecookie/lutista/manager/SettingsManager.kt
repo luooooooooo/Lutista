@@ -206,7 +206,7 @@ class SettingsManager(
 
     // 模糊效果开关
     val useBlur: Flow<Boolean> = dataStore.data.map { prefs ->
-        prefs[USE_BLUR_KEY] ?: false
+        prefs[USE_BLUR_KEY] ?: true
     }
 
     suspend fun setUseBlur(useBlur: Boolean) {
@@ -214,11 +214,81 @@ class SettingsManager(
     }
 
     fun getUseBlurSync(): Boolean = runBlocking {
-        dataStore.data.first()[USE_BLUR_KEY] ?: false
+        dataStore.data.first()[USE_BLUR_KEY] ?: true
+    }
+
+    // Monet 自定义颜色开关
+    val useMonet: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[USE_MONET_KEY] ?: false
+    }
+
+    suspend fun setUseMonet(useMonet: Boolean) {
+        dataStore.edit { prefs -> prefs[USE_MONET_KEY] = useMonet }
+    }
+
+    fun getUseMonetSync(): Boolean = runBlocking {
+        dataStore.data.first()[USE_MONET_KEY] ?: false
+    }
+
+    // 动态取色开关（使用系统/壁纸颜色作为种子色）
+    val useDynamicColor: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[USE_DYNAMIC_COLOR_KEY] ?: true
+    }
+
+    suspend fun setUseDynamicColor(useDynamicColor: Boolean) {
+        dataStore.edit { prefs -> prefs[USE_DYNAMIC_COLOR_KEY] = useDynamicColor }
+    }
+
+    fun getUseDynamicColorSync(): Boolean = runBlocking {
+        dataStore.data.first()[USE_DYNAMIC_COLOR_KEY] ?: true
+    }
+
+    // 手动种子颜色 (ARGB hex string)
+    val seedColor: Flow<String> = dataStore.data.map { prefs ->
+        prefs[SEED_COLOR_KEY] ?: ""
+    }
+
+    suspend fun setSeedColor(seedColor: String) {
+        dataStore.edit { prefs -> prefs[SEED_COLOR_KEY] = seedColor }
+    }
+
+    fun getSeedColorSync(): String = runBlocking {
+        dataStore.data.first()[SEED_COLOR_KEY] ?: ""
+    }
+
+    // 调色板风格
+    val paletteStyle: Flow<String> = dataStore.data.map { prefs ->
+        prefs[PALETTE_STYLE_KEY] ?: "TonalSpot"
+    }
+
+    suspend fun setPaletteStyle(style: String) {
+        dataStore.edit { prefs -> prefs[PALETTE_STYLE_KEY] = style }
+    }
+
+    fun getPaletteStyleSync(): String = runBlocking {
+        dataStore.data.first()[PALETTE_STYLE_KEY] ?: "TonalSpot"
+    }
+
+    // 颜色规范
+    val colorSpec: Flow<String> = dataStore.data.map { prefs ->
+        prefs[COLOR_SPEC_KEY] ?: "Spec2025"
+    }
+
+    suspend fun setColorSpec(spec: String) {
+        dataStore.edit { prefs -> prefs[COLOR_SPEC_KEY] = spec }
+    }
+
+    fun getColorSpecSync(): String = runBlocking {
+        dataStore.data.first()[COLOR_SPEC_KEY] ?: "Spec2025"
     }
 
     companion object {
         private val USE_BLUR_KEY = booleanPreferencesKey("use_blur")
+        private val USE_MONET_KEY = booleanPreferencesKey("use_monet")
+        private val USE_DYNAMIC_COLOR_KEY = booleanPreferencesKey("use_dynamic_color")
+        private val SEED_COLOR_KEY = stringPreferencesKey("seed_color")
+        private val PALETTE_STYLE_KEY = stringPreferencesKey("palette_style")
+        private val COLOR_SPEC_KEY = stringPreferencesKey("color_spec")
         private val OUTPUT_FORMAT_KEY = stringPreferencesKey("output_format")
         private val JPG_QUALITY_KEY = intPreferencesKey("jpg_quality")
         private val PNG_COMPRESSION_KEY = intPreferencesKey("png_compression")

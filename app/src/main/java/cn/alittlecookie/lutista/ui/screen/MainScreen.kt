@@ -57,11 +57,39 @@ fun MainScreen() {
     val settingsManager: SettingsManager = koinInject()
 
     var themeMode by remember { mutableStateOf(settingsManager.getThemeModeSync()) }
+    var useMonet by remember { mutableStateOf(settingsManager.getUseMonetSync()) }
+    var useDynamicColor by remember { mutableStateOf(settingsManager.getUseDynamicColorSync()) }
+    var seedColor by remember { mutableStateOf(settingsManager.getSeedColorSync()) }
+    var paletteStyle by remember { mutableStateOf(settingsManager.getPaletteStyleSync()) }
+    var colorSpec by remember { mutableStateOf(settingsManager.getColorSpecSync()) }
+
     LaunchedEffect(Unit) {
         settingsManager.themeMode.collect { themeMode = it }
     }
+    LaunchedEffect(Unit) {
+        settingsManager.useMonet.collect { useMonet = it }
+    }
+    LaunchedEffect(Unit) {
+        settingsManager.useDynamicColor.collect { useDynamicColor = it }
+    }
+    LaunchedEffect(Unit) {
+        settingsManager.seedColor.collect { seedColor = it }
+    }
+    LaunchedEffect(Unit) {
+        settingsManager.paletteStyle.collect { paletteStyle = it }
+    }
+    LaunchedEffect(Unit) {
+        settingsManager.colorSpec.collect { colorSpec = it }
+    }
 
-    LutistaTheme(themeMode = themeMode) {
+    LutistaTheme(
+        themeMode = themeMode,
+        useMonet = useMonet,
+        useDynamicColor = useDynamicColor,
+        seedColor = seedColor,
+        paletteStyle = paletteStyle,
+        colorSpec = colorSpec
+    ) {
         MainScreenContent()
     }
 }
@@ -73,6 +101,7 @@ private fun MainScreenContent() {
 
     var showVulkanDialog by remember { mutableStateOf(false) }
     var returnToRecipeTab by remember { mutableStateOf(false) }
+    var returnToSettingsTab by remember { mutableStateOf(false) }
     var recipeSubTab by remember { mutableIntStateOf(0) }
 
     val backStack = remember { mutableStateListOf<NavKey>(Screen.Main) }
@@ -201,7 +230,11 @@ private fun MainScreenContent() {
                     },
                     onMonitorFolderClick = { monitorFolderLauncher.launch(null) },
                     onOutputFolderClick = { outputFolderLauncher.launch(null) },
-                    initialPage = if (returnToRecipeTab) { returnToRecipeTab = false; 1 } else 0,
+                    initialPage = when {
+                        returnToRecipeTab -> { returnToRecipeTab = false; 1 }
+                        returnToSettingsTab -> { returnToSettingsTab = false; 2 }
+                        else -> 0
+                    },
                     recipeSubTab = recipeSubTab,
                     onRecipeSubTabChange = { recipeSubTab = it },
                     onThemeSettingsClick = { backStack.add(Screen.ThemeSettings) }
@@ -235,7 +268,10 @@ private fun MainScreenContent() {
             }
             entry<Screen.ThemeSettings> {
                 ThemeSettingsPage(
-                    onBackClick = { backStack.removeLast() }
+                    onBackClick = {
+                        returnToSettingsTab = true
+                        backStack.removeLast()
+                    }
                 )
             }
         }
@@ -248,6 +284,11 @@ private fun MainScreenContent() {
 
     NavDisplay(
         entries = entries,
-        onBack = { backStack.removeLast() }
+        onBack = {
+            if (backStack.lastOrNull() is Screen.ThemeSettings) {
+                returnToSettingsTab = true
+            }
+            backStack.removeLast()
+        }
     )
 }
