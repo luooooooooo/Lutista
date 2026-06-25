@@ -981,7 +981,14 @@ private fun ContainerPropertyEditor(
                 val sel = container.widthMode == mode
                 Box(modifier = Modifier.weight(1f).clip(RoundedCornerShape(6.dp))
                     .background(if (sel) MiuixTheme.colorScheme.primary.copy(alpha = 0.15f) else MiuixTheme.colorScheme.surfaceVariant)
-                    .clickable { state.updateContainerElement(container.id) { it.copy(widthMode = mode) } }
+                    .clickable {
+                        state.updateContainerElement(container.id) {
+                            it.copy(
+                                widthMode = mode,
+                                width = if (mode == SizeMode.FIXED) it.width ?: 300f else it.width
+                            )
+                        }
+                    }
                     .padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
                     Text(if (mode == SizeMode.WRAP_CONTENT) "自适应" else "固定", fontSize = 12.sp,
                         color = if (sel) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurfaceVariantSummary)
@@ -989,10 +996,10 @@ private fun ContainerPropertyEditor(
             }
         }
         if (container.widthMode == SizeMode.FIXED) {
-            var w by remember(container.width) { mutableFloatStateOf(container.width ?: 10f) }
-            SliderWithValue(label = "宽度 (gm)", value = w, onValueChange = { w = it },
+            var w by remember(container.width) { mutableFloatStateOf(container.width ?: 300f) }
+            SliderWithValue(label = "宽度 (gm)", value = w, onValueChange = { w = it.roundToInt().toFloat() },
                 onValueChangeFinished = { state.updateContainerElement(container.id) { it.copy(width = w) } },
-                valueRange = 1f..200f, valueFormatter = { "%.1f".format(it) })
+                valueRange = 1f..1000f, valueFormatter = { "%.0f".format(it) })
         }
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -1006,7 +1013,14 @@ private fun ContainerPropertyEditor(
                 val sel = container.heightMode == mode
                 Box(modifier = Modifier.weight(1f).clip(RoundedCornerShape(6.dp))
                     .background(if (sel) MiuixTheme.colorScheme.primary.copy(alpha = 0.15f) else MiuixTheme.colorScheme.surfaceVariant)
-                    .clickable { state.updateContainerElement(container.id) { it.copy(heightMode = mode) } }
+                    .clickable {
+                        state.updateContainerElement(container.id) {
+                            it.copy(
+                                heightMode = mode,
+                                height = if (mode == SizeMode.FIXED) it.height ?: 300f else it.height
+                            )
+                        }
+                    }
                     .padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
                     Text(if (mode == SizeMode.WRAP_CONTENT) "自适应" else "固定", fontSize = 12.sp,
                         color = if (sel) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurfaceVariantSummary)
@@ -1014,10 +1028,10 @@ private fun ContainerPropertyEditor(
             }
         }
         if (container.heightMode == SizeMode.FIXED) {
-            var h by remember(container.height) { mutableFloatStateOf(container.height ?: 10f) }
-            SliderWithValue(label = "高度 (gm)", value = h, onValueChange = { h = it },
+            var h by remember(container.height) { mutableFloatStateOf(container.height ?: 300f) }
+            SliderWithValue(label = "高度 (gm)", value = h, onValueChange = { h = it.roundToInt().toFloat() },
                 onValueChangeFinished = { state.updateContainerElement(container.id) { it.copy(height = h) } },
-                valueRange = 1f..200f, valueFormatter = { "%.1f".format(it) })
+                valueRange = 1f..1000f, valueFormatter = { "%.0f".format(it) })
         }
 
         // 3. 锚点

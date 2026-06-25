@@ -123,8 +123,13 @@ class LayoutEngine(private val converter: UnitConverter) {
             Pair(spx, spx)
         }
 
-        // 不限制尺寸，超出的部分由渲染时 clipRect 自然截断
-        return Size(w.toFloat(), h.toFloat())
+        // Scale down proportionally to fit within parent constraint
+        val scaleW = if (constraint.hasFixedWidth && w > constraint.maxWidth)
+            constraint.maxWidth.toDouble() / w else 1.0
+        val scaleH = if (constraint.hasFixedHeight && h > constraint.maxHeight)
+            constraint.maxHeight.toDouble() / h else 1.0
+        val scale = minOf(scaleW, scaleH)
+        return Size((w * scale).toFloat(), (h * scale).toFloat())
     }
 
     private fun getAspectRatio(uri: String): Double? {
@@ -160,13 +165,15 @@ class LayoutEngine(private val converter: UnitConverter) {
         bounds: MutableMap<String, ElementBounds>
     ): Size {
         val paddingPx = with(converter) { container.padding.toPx() }
+        val availableW = maxOf(0f, constraint.maxWidth - paddingPx.left - paddingPx.right)
+        val availableH = maxOf(0f, constraint.maxHeight - paddingPx.top - paddingPx.bottom)
         val innerW = when (container.widthMode) {
-            SizeMode.FIXED -> converter.gmToPx(container.width ?: 10f)
-            SizeMode.WRAP_CONTENT -> constraint.maxWidth - paddingPx.left - paddingPx.right
+            SizeMode.FIXED -> minOf(converter.gmToPx(container.width ?: 300f), availableW)
+            SizeMode.WRAP_CONTENT -> availableW
         }
         val innerH = when (container.heightMode) {
-            SizeMode.FIXED -> converter.gmToPx(container.height ?: 10f)
-            SizeMode.WRAP_CONTENT -> constraint.maxHeight - paddingPx.top - paddingPx.bottom
+            SizeMode.FIXED -> minOf(converter.gmToPx(container.height ?: 300f), availableH)
+            SizeMode.WRAP_CONTENT -> availableH
         }
         val innerSize = Size(innerW, innerH)
 
@@ -199,7 +206,7 @@ class LayoutEngine(private val converter: UnitConverter) {
             childInfo
         }
 
-        return when (container.mode) {
+        val rawSize = when (container.mode) {
             ContainerMode.LINEAR_H -> {
                 val totalW = childrenInfo.sumOf { it.layoutSize.width.toDouble() }.toFloat()
                 val maxH = childrenInfo.maxOfOrNull { it.layoutSize.height } ?: 0f
@@ -222,6 +229,10 @@ class LayoutEngine(private val converter: UnitConverter) {
                 Size(w + paddingPx.left + paddingPx.right, h + paddingPx.top + paddingPx.bottom)
             }
         }
+        return Size(
+            minOf(rawSize.width, constraint.maxWidth),
+            minOf(rawSize.height, constraint.maxHeight)
+        )
     }
 
     private fun layoutContainerChildren(
@@ -329,23 +340,7 @@ class LayoutEngine(private val converter: UnitConverter) {
         child: Element,
         container: ContainerElement,
         innerSize: Size
-    ): Constraint {
-        val isH = container.mode == ContainerMode.LINEAR_H
-        val stretchCross = container.crossAxisAlign == CrossAxisAlign.STRETCH
-
-        return Constraint(
-            maxWidth = when {
-                container.widthMode == SizeMode.FIXED -> innerSize.width
-                stretchCross && !isH -> innerSize.width
-                else -> Float.MAX_VALUE
-            },
-            maxHeight = when {
-                container.heightMode == SizeMode.FIXED -> innerSize.height
-                stretchCross && isH -> innerSize.height
-                else -> Float.MAX_VALUE
-            }
-        )
-    }
+    ): Constraint = Constraint(maxWidth = innerSize.width, maxHeight = innerSize.height)
 
     private fun calculateMainAxisLayout(
         align: MainAxisAlign,
