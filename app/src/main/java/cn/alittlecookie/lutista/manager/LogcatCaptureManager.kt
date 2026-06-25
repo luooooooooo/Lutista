@@ -20,12 +20,8 @@ import java.util.regex.Pattern
  * into logcat_yyyy-MM-dd.log files. Started/stopped by LogManager.
  */
 class LogcatCaptureManager(
-    private val logDir: File,
-    settingsManager: SettingsManager
+    private val logDir: File
 ) {
-    companion object {
-        private const val TAG = "LogcatCapture"
-    }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var captureJob: Job? = null
@@ -68,7 +64,7 @@ class LogcatCaptureManager(
                         // If logcat fails, stop capture
                         break
                     }
-                    kotlinx.coroutines.delay(2000L)
+                    kotlinx.coroutines.delay(2000)
                 }
             } catch (_: Exception) {}
         }

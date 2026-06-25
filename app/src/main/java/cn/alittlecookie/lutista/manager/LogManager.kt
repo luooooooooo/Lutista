@@ -23,7 +23,9 @@ class LogManager(
     private val settingsManager: SettingsManager
 ) {
     private val logDir = File(context.filesDir, "logs")
+    @Suppress("unused")
     private val _logEntries = MutableStateFlow<List<LogEntry>>(emptyList())
+    @Suppress("unused")
     val logEntries: StateFlow<List<LogEntry>> = _logEntries.asStateFlow()
     private var fileTree: FileLogTree? = null
     private var logcatCapture: LogcatCaptureManager? = null
@@ -62,7 +64,7 @@ class LogManager(
             Timber.plant(fileTree!!)
         }
         if (logcatCapture == null) {
-            logcatCapture = LogcatCaptureManager(logDir, settingsManager)
+            logcatCapture = LogcatCaptureManager(logDir)
             logcatCapture!!.start()
         }
     }
@@ -190,8 +192,6 @@ class FileLogTree(private val logDir: File) : Timber.Tree() {
 
         val timestamp = timeFormat.format(Date())
         val level = when (priority) {
-            Log.VERBOSE -> "V"
-            Log.DEBUG -> "D"
             Log.INFO -> "I"
             Log.WARN -> "W"
             Log.ERROR -> "E"

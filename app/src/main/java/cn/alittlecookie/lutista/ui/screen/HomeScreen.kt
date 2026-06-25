@@ -276,7 +276,6 @@ fun HomeScreen(
                 },
                 onCameraModeChange = { isCameraMode = it },
                 onCameraClick = { /* TODO: 打开联机页面 */ },
-                onPhotoSelected = onPhotoSelected,
                 launchPicker = launchPicker
             )
         }
@@ -338,7 +337,6 @@ private fun StatusSection(
     onMonitorToggle: () -> Unit,
     onCameraModeChange: (Boolean) -> Unit,
     onCameraClick: () -> Unit,
-    onPhotoSelected: (List<String>) -> Unit,
     launchPicker: () -> Unit = {}
 ) {
     Row(
