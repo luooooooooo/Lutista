@@ -394,10 +394,14 @@ private fun PreviewArea(
                                 )
                             )
 
-                    // Elements
+                    // Elements — render at preview resolution
+                    val renderConverter = UnitConverter(
+                        (converter.imageWidth * scaleToFit).toInt().coerceAtLeast(1),
+                        (converter.imageHeight * scaleToFit).toInt().coerceAtLeast(1)
+                    )
                     drawSceneElements(
                         state = state, layout = layout, converter = converter,
-                        scaleToFit = scaleToFit, appCtx = appContext
+                        renderConverter = renderConverter, scaleToFit = scaleToFit, appCtx = appContext
                     )
                         }
                     }
@@ -420,16 +424,16 @@ private fun PreviewArea(
 
 private fun DrawScope.drawSceneElements(
     state: WatermarkEditorViewModel, layout: LayoutResult, converter: UnitConverter,
-    scaleToFit: Float, appCtx: android.content.Context
+    renderConverter: UnitConverter, scaleToFit: Float, appCtx: android.content.Context
 ) {
     state.scene.elements.asReversed().forEach { element ->
-        drawElementRecursive(element, layout, converter, scaleToFit, 1f, state, appCtx)
+        drawElementRecursive(element, layout, converter, renderConverter, scaleToFit, 1f, state, appCtx)
     }
 }
 
 private fun DrawScope.drawElementRecursive(
     element: Element, layout: LayoutResult, converter: UnitConverter,
-    scaleToFit: Float, parentOpacity: Float,
+    renderConverter: UnitConverter, scaleToFit: Float, parentOpacity: Float,
     state: WatermarkEditorViewModel, appCtx: android.content.Context
 ) {
     val bounds = layout.elementBounds[element.id]
@@ -441,7 +445,17 @@ private fun DrawScope.drawElementRecursive(
 
     when (element) {
         is TextElement -> {
-            val textBitmap = WatermarkEditorViewModel.renderTextToBitmap(element, converter, bounds)
+            val scaledBounds = bounds.copy(
+                x = bounds.x * scaleToFit,
+                y = bounds.y * scaleToFit,
+                width = bounds.width * scaleToFit,
+                height = bounds.height * scaleToFit,
+                marginLeft = bounds.marginLeft * scaleToFit,
+                marginTop = bounds.marginTop * scaleToFit,
+                marginRight = bounds.marginRight * scaleToFit,
+                marginBottom = bounds.marginBottom * scaleToFit
+            )
+            val textBitmap = state.getOrCreateTextBitmap(element, renderConverter, scaledBounds)
             if (textBitmap.width > 0 && textBitmap.height > 0) {
                 drawImage(
                     image = textBitmap.asImageBitmap(),
@@ -449,10 +463,7 @@ private fun DrawScope.drawElementRecursive(
                         (bounds.x * scaleToFit).toInt(),
                         (bounds.y * scaleToFit).toInt()
                     ),
-                    dstSize = androidx.compose.ui.unit.IntSize(
-                        (bounds.width * scaleToFit).toInt(),
-                        (bounds.height * scaleToFit).toInt()
-                    ),
+                    dstSize = androidx.compose.ui.unit.IntSize(textBitmap.width, textBitmap.height),
                     alpha = opacity
                 )
             }
@@ -460,12 +471,14 @@ private fun DrawScope.drawElementRecursive(
         is ImageElement -> {
             if (element.imageUri.isNotEmpty()) {
                 try {
+                    val inSampleSize = calculateInSampleSize(scaleToFit)
+                    val opts = BitmapFactory.Options().apply { this.inSampleSize = inSampleSize }
                     val imgBitmap = if (element.imageUri.startsWith("content://")) {
                         appCtx.contentResolver.openInputStream(android.net.Uri.parse(element.imageUri))?.use { stream ->
-                            BitmapFactory.decodeStream(stream)
+                            BitmapFactory.decodeStream(stream, null, opts)
                         }?.let { ExifUtils.correctOrientation(it, appCtx, android.net.Uri.parse(element.imageUri)) }
                     } else {
-                        BitmapFactory.decodeFile(element.imageUri)
+                        BitmapFactory.decodeFile(element.imageUri, opts)
                             ?.let { ExifUtils.correctOrientation(it, element.imageUri) }
                     }
                     if (imgBitmap != null) {
@@ -487,7 +500,7 @@ private fun DrawScope.drawElementRecursive(
         }
         is ContainerElement -> {
             element.children.forEach {
-                drawElementRecursive(it, layout, converter, scaleToFit, opacity, state, appCtx)
+                drawElementRecursive(it, layout, converter, renderConverter, scaleToFit, opacity, state, appCtx)
             }
         }
     }
@@ -1259,6 +1272,14 @@ private fun ColorPickerButton(
             }
         }
     }
+}
+
+private fun calculateInSampleSize(scaleToFit: Float): Int {
+    if (scaleToFit >= 1f) return 1
+    var s = 1
+    val target = (1f / scaleToFit).toInt()
+    while (s * 2 <= target) s *= 2
+    return s
 }
 
 @Composable

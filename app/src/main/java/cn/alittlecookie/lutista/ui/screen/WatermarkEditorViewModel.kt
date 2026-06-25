@@ -42,6 +42,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
 import kotlin.math.ceil
+import kotlin.time.Duration.Companion.milliseconds
 import android.graphics.Canvas as AndroidCanvas
 
 class WatermarkEditorViewModel(
@@ -72,6 +73,9 @@ class WatermarkEditorViewModel(
     private var renderJob: Job? = null
     private var baseImageWidth = 0
     private var baseImageHeight = 0
+
+    // Cached text bitmaps for preview — keyed by element rendering hash
+    private val textBitmapCache = HashMap<String, Bitmap>()
 
     suspend fun load() {
         withContext(Dispatchers.IO) {
@@ -108,6 +112,7 @@ class WatermarkEditorViewModel(
 
     private fun loadDefaultPreview() {
         scope.launch(Dispatchers.IO) {
+            delay(200.milliseconds) // Wait for page transition animation to complete
             try {
                 val options = BitmapFactory.Options()
                 val bitmap = BitmapFactory.decodeResource(context.resources, R.raw.example, options)
@@ -222,6 +227,7 @@ class WatermarkEditorViewModel(
 
     private fun computeLayout() {
         if (baseImageWidth <= 0 || baseImageHeight <= 0) return
+        textBitmapCache.clear()
         val cvt = UnitConverter(baseImageWidth, baseImageHeight)
         converter = cvt
         val engine = LayoutEngine(cvt)
@@ -366,6 +372,7 @@ class WatermarkEditorViewModel(
     }
 
     fun deleteElement(elementId: String) {
+        textBitmapCache.filterKeys { it.startsWith("$elementId|") }.keys.forEach { textBitmapCache.remove(it) }
         val newScene = scene.copy(
             elements = removeElementRecursive(scene.elements, elementId)
         )
@@ -533,7 +540,20 @@ class WatermarkEditorViewModel(
     fun release() {
         renderJob?.cancel()
         baseImageBitmap = null
+        textBitmapCache.clear()
         historyManager.clear()
+    }
+
+    fun getOrCreateTextBitmap(element: TextElement, converter: UnitConverter, bounds: ElementBounds): Bitmap {
+        val key = "%s|%s|%.2f|%.2f|%.2f|%08X|%s|%s|%s|%.4f|%.2f|%.2f".format(
+            element.id, element.content,
+            element.fontSize, element.letterSpacing, element.lineHeight,
+            element.color, element.fontUri ?: "", element.fontWeight.name, element.textAlign.name,
+            converter.gmBase, bounds.width, bounds.height
+        )
+        return textBitmapCache.getOrPut(key) {
+            renderTextToBitmap(element, converter, bounds)
+        }
     }
 
     companion object {
