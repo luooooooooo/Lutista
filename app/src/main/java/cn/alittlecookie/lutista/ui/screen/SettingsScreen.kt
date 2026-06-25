@@ -199,7 +199,7 @@ fun SettingsScreen(
 
                 SwitchPreference(
                     title = "Logcat日志",
-                    summary = "开启后打印Logcat到文件",
+                    summary = "开启后打印Logcat到文件，仅保留最近7天的文件",
                     checked = logEnabled,
                     onCheckedChange = { enabled ->
                         scope.launch {
