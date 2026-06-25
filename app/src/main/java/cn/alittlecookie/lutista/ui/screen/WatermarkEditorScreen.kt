@@ -838,10 +838,10 @@ private fun ImagePropertyContent(element: ImageElement, state: WatermarkEditorVi
 
     Spacer(Modifier.size(4.dp))
 
-    var size by remember(element.width) { mutableFloatStateOf(element.width ?: 20f) }
-    SliderWithValue(label = "大小 (gm)", value = size, onValueChange = { size = it },
+    var size by remember(element.width) { mutableFloatStateOf(element.width ?: 200f) }
+    SliderWithValue(label = "大小 (gm)", value = size, onValueChange = { size = it.roundToInt().toFloat() },
         onValueChangeFinished = { state.updateImageElement(element.id) { it.copy(width = size) } },
-        valueRange = 1f..1000f, valueFormatter = { "%.1f".format(it) })
+        valueRange = 1f..1000f, valueFormatter = { "%.0f".format(it) })
 
     // 3. 不透明度
     var opacity by remember(element.opacity) { mutableFloatStateOf(element.opacity * 100f) }

@@ -334,7 +334,7 @@ class WatermarkEditorViewModel(
 
     fun addImageElement() {
         val id = "i_${UUID.randomUUID().toString().take(8)}"
-        val newElement = ImageElement(id = id, imageUri = "")
+        val newElement = ImageElement(id = id, imageUri = "", imageSizeRef = 2, width = 200f)
         addElementToList(newElement)
     }
 
