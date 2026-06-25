@@ -77,6 +77,14 @@ class WatermarkEditorViewModel(
     // Cached text bitmaps for preview — keyed by element rendering hash
     private val textBitmapCache = HashMap<String, Bitmap>()
 
+    // Suppress layout and freeze preview during drag reorder
+    var suppressLayout = false
+        private set
+    private var _previewElements by mutableStateOf<List<Element>?>(null)
+    val previewElements: List<Element>? get() = _previewElements
+    private var _previewScene by mutableStateOf<Scene?>(null)
+    val previewScene: Scene? get() = _previewScene
+
     suspend fun load() {
         withContext(Dispatchers.IO) {
             val entity = watermarkRepository.getWatermarkById(watermarkId)
@@ -112,7 +120,7 @@ class WatermarkEditorViewModel(
 
     private fun loadDefaultPreview() {
         scope.launch(Dispatchers.IO) {
-            delay(200.milliseconds) // Wait for page transition animation to complete
+            delay(100.milliseconds) // Wait for page transition animation to complete
             try {
                 val options = BitmapFactory.Options()
                 val bitmap = BitmapFactory.decodeResource(context.resources, R.raw.example, options)
@@ -234,7 +242,7 @@ class WatermarkEditorViewModel(
         layoutResult = engine.layout(scene)
     }
 
-    private fun triggerComputeLayout() {
+    fun triggerComputeLayout() {
         renderJob?.cancel()
         renderJob = scope.launch(Dispatchers.IO) {
             delay(50)
@@ -403,6 +411,21 @@ class WatermarkEditorViewModel(
         applyNewScene(newScene)
     }
 
+    fun onDragStart() {
+        suppressLayout = true
+        _previewElements = scene.elements.toList()
+        _previewScene = scene
+    }
+
+    fun onDragEnd() {
+        suppressLayout = false
+        _previewElements = null
+        _previewScene = null
+        historyManager.saveState(scene)
+        updateUndoRedoState()
+        triggerComputeLayout()
+    }
+
     private fun moveInElements(list: List<Element>, containerId: String, from: Int, to: Int): List<Element> {
         return list.map { el ->
             if (el.id == containerId && el is ContainerElement) {
@@ -459,9 +482,11 @@ class WatermarkEditorViewModel(
     private fun applyNewScene(newScene: Scene) {
         scene = newScene
         hasChanges = true
-        historyManager.saveState(newScene)
-        updateUndoRedoState()
-        triggerComputeLayout()
+        if (!suppressLayout) {
+            historyManager.saveState(newScene)
+            updateUndoRedoState()
+            triggerComputeLayout()
+        }
     }
 
     fun undo() {

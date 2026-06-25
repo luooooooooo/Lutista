@@ -360,6 +360,7 @@ private fun PreviewArea(
                         size.width / layout.canvasWidth,
                         size.height / layout.canvasHeight
                     )
+                    val drawScene = state.previewScene ?: state.scene
 
                     translate(
                         left = (size.width - layout.canvasWidth * scaleToFit) / 2,
@@ -368,7 +369,7 @@ private fun PreviewArea(
                         clipRect {
                             // Border fill
                             drawRect(
-                                color = Color(state.scene.baseImage.borderColor),
+                                color = Color(drawScene.baseImage.borderColor),
                                 size = Size(
                                     layout.canvasWidth * scaleToFit,
                                     layout.canvasHeight * scaleToFit
@@ -376,7 +377,7 @@ private fun PreviewArea(
                             )
 
                             // Base image
-                            val borderPx = state.scene.baseImage.borderWidth.let { bw ->
+                            val borderPx = drawScene.baseImage.borderWidth.let { bw ->
                                 Offset(
                                     converter.gmToPx(bw.left) * scaleToFit,
                                     converter.gmToPx(bw.top) * scaleToFit
@@ -426,7 +427,8 @@ private fun DrawScope.drawSceneElements(
     state: WatermarkEditorViewModel, layout: LayoutResult, converter: UnitConverter,
     renderConverter: UnitConverter, scaleToFit: Float, appCtx: android.content.Context
 ) {
-    state.scene.elements.asReversed().forEach { element ->
+    val elements = state.previewElements ?: state.scene.elements
+    elements.asReversed().forEach { element ->
         drawElementRecursive(element, layout, converter, renderConverter, scaleToFit, 1f, state, appCtx)
     }
 }
@@ -546,7 +548,8 @@ private fun NodeTree(
             itemsIndexed(elements, key = { _, el -> el.id }) { index, el ->
                 ReorderableItem(reorderableState, key = el.id) { isDragging ->
                     val dragModifier = Modifier.draggableHandle(
-                        onDragStarted = {}, onDragStopped = {}
+                        onDragStarted = { state.onDragStart() },
+                        onDragStopped = { state.onDragEnd() }
                     )
                     NodeTreeItem(
                         element = el, state = state, index = index,
