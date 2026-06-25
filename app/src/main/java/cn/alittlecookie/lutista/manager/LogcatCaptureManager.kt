@@ -14,6 +14,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.regex.Pattern
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Captures the app's logcat output (including native __android_log_print calls)
@@ -64,7 +65,7 @@ class LogcatCaptureManager(
                         // If logcat fails, stop capture
                         break
                     }
-                    kotlinx.coroutines.delay(2000)
+                    kotlinx.coroutines.delay(2000.milliseconds)
                 }
             } catch (_: Exception) {}
         }

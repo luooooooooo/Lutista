@@ -96,7 +96,6 @@ fun MainTabScreen(
         ) { page ->
             when (page) {
                 0 -> HomeScreen(
-                    onPhotoSelected = onPhotoSelected,
                     launchPicker = launchPicker,
                     onMonitorFolderClick = onMonitorFolderClick,
                     onOutputFolderClick = onOutputFolderClick

@@ -34,6 +34,10 @@ class LogManager(
     init {
         logDir.mkdirs()
         setupTimber()
+        // Clean logs older than 7 days on every startup
+        appScope.launch(Dispatchers.IO) {
+            cleanOldLogs(7)
+        }
     }
 
     private fun setupTimber() {
@@ -67,6 +71,9 @@ class LogManager(
             logcatCapture = LogcatCaptureManager(logDir)
             logcatCapture!!.start()
         }
+        appScope.launch(Dispatchers.IO) {
+            cleanOldLogs(7)
+        }
     }
 
     private fun stopLogging() {
@@ -76,8 +83,6 @@ class LogManager(
         }
         logcatCapture?.destroy()
         logcatCapture = null
-        // Clear all log files
-        logDir.listFiles()?.forEach { it.delete() }
     }
 
     fun d(tag: String, message: String) {

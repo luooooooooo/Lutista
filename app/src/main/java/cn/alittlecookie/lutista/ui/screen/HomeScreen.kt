@@ -73,7 +73,6 @@ import top.yukonga.miuix.kmp.utils.overScrollVertical
 
 @Composable
 fun HomeScreen(
-    onPhotoSelected: (List<String>) -> Unit = {},
     launchPicker: () -> Unit = {},
     onMonitorFolderClick: () -> Unit = {},
     onOutputFolderClick: () -> Unit = {}
