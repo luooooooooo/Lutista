@@ -1148,10 +1148,12 @@ private fun PaddingEditor(padding: Padding, onPaddingChange: (Padding) -> Unit) 
 private fun PaddingSlider(label: String, value: Float, onValueChange: (Float) -> Unit, onValueChangeFinished: () -> Unit) {
     Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically) {
-        Text(label, fontSize = 14.sp, color = MiuixTheme.colorScheme.onSurface, modifier = Modifier.padding(end = 4.dp))
-        Slider(value = value, onValueChange = onValueChange, onValueChangeFinished = onValueChangeFinished,
-            valueRange = 0f..50f, modifier = Modifier.weight(1f))
-        Text("%.1f".format(value), fontSize = 14.sp, color = MiuixTheme.colorScheme.primary, modifier = Modifier.padding(start = 4.dp))
+        Text(label, fontSize = 14.sp, color = MiuixTheme.colorScheme.onSurface, modifier = Modifier.padding(end = 8.dp))
+        Slider(value = value, onValueChange = { onValueChange(it.roundToInt().toFloat()) }, onValueChangeFinished = onValueChangeFinished,
+            valueRange = 0f..200f, modifier = Modifier.weight(1f))
+        Text("%.0f".format(value), fontSize = 14.sp, color = MiuixTheme.colorScheme.primary,
+            modifier = Modifier.width(36.dp).padding(start = 4.dp),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center)
     }
 }
 
@@ -1159,10 +1161,12 @@ private fun PaddingSlider(label: String, value: Float, onValueChange: (Float) ->
 private fun MarginSlider(label: String, value: Float, onValueChange: (Float) -> Unit, onValueChangeFinished: () -> Unit) {
     Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically) {
-        Text(label, fontSize = 14.sp, color = MiuixTheme.colorScheme.onSurface, modifier = Modifier.padding(end = 4.dp))
-        Slider(value = value, onValueChange = onValueChange, onValueChangeFinished = onValueChangeFinished,
-            valueRange = 0f..50f, modifier = Modifier.weight(1f))
-        Text("%.1f".format(value), fontSize = 14.sp, color = MiuixTheme.colorScheme.primary, modifier = Modifier.padding(start = 4.dp))
+        Text(label, fontSize = 14.sp, color = MiuixTheme.colorScheme.onSurface, modifier = Modifier.padding(end = 8.dp))
+        Slider(value = value, onValueChange = { onValueChange(it.roundToInt().toFloat()) }, onValueChangeFinished = onValueChangeFinished,
+            valueRange = 0f..200f, modifier = Modifier.weight(1f))
+        Text("%.0f".format(value), fontSize = 14.sp, color = MiuixTheme.colorScheme.primary,
+            modifier = Modifier.width(36.dp).padding(start = 4.dp),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center)
     }
 }
 
