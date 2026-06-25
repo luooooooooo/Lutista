@@ -85,6 +85,8 @@ bool VulkanDevice::selectPhysicalDevice() {
     vkGetPhysicalDeviceProperties(m_physicalDevice, &props);
     m_limits = props.limits;
 
+    vkGetPhysicalDeviceFeatures(m_physicalDevice, &m_features);
+
     LOGI("Selected device: %s", props.deviceName);
     LOGI("Max compute work group count: %u x %u x %u",
          props.limits.maxComputeWorkGroupCount[0],
@@ -102,10 +104,18 @@ bool VulkanDevice::createLogicalDevice() {
     queueCreateInfo.queueCount = 1;
     queueCreateInfo.pQueuePriorities = &queuePriority;
 
+    // Enable required features — Mali drivers may crash without explicit enable
+    VkPhysicalDeviceFeatures enabledFeatures{};
+    if (m_features.shaderStorageImageReadWithoutFormat)
+        enabledFeatures.shaderStorageImageReadWithoutFormat = VK_TRUE;
+    if (m_features.shaderStorageImageWriteWithoutFormat)
+        enabledFeatures.shaderStorageImageWriteWithoutFormat = VK_TRUE;
+
     VkDeviceCreateInfo deviceCreateInfo{};
     deviceCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     deviceCreateInfo.queueCreateInfoCount = 1;
     deviceCreateInfo.pQueueCreateInfos = &queueCreateInfo;
+    deviceCreateInfo.pEnabledFeatures = &enabledFeatures;
 
     VkResult result = vkCreateDevice(m_physicalDevice, &deviceCreateInfo, nullptr, &m_device);
     if (result != VK_SUCCESS) {

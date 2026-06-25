@@ -127,5 +127,7 @@ private:
     bool ensureImageSize(uint32_t width, uint32_t height);
     bool createUbo();
     bool uploadUbo(const FilterParams& params);
+    void initStaticDescriptors();
     void updateDescriptorSets();
+    void updateLutDescriptors();
 };

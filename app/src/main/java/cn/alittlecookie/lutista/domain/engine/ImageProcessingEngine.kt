@@ -27,12 +27,12 @@ class ImageProcessingEngine(
         private const val TAG = "ImageProcessingEngine"
     }
 
-    private var lastLutPath1: String? = null
-    private var lastLutPath2: String? = null
-    private var lastLutSize1: Int = 0
-    private var lastLutSize2: Int = 0
-    private var lut1Uploaded = false
-    private var lut2Uploaded = false
+    @Volatile private var lastLutPath1: String? = null
+    @Volatile private var lastLutPath2: String? = null
+    @Volatile private var lastLutSize1: Int = 0
+    @Volatile private var lastLutSize2: Int = 0
+    @Volatile private var lut1Uploaded = false
+    @Volatile private var lut2Uploaded = false
 
     fun processImageGpuFromBytes(
         rgbaBytes: ByteArray, width: Int, height: Int, filter: FilterConfig
@@ -145,7 +145,7 @@ class ImageProcessingEngine(
         }
     }
 
-    private var lastCurveHash: Int = 0
+    @Volatile private var lastCurveHash: Int = 0
 
     private fun uploadCurvesIfNeeded(filter: FilterConfig) {
         val curveData = buildCurveData(filter.curveConfig)

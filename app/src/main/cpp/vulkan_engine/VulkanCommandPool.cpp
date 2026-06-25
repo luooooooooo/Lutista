@@ -47,28 +47,52 @@ VkCommandBuffer VulkanCommandPool::beginSingleTimeCommands(const VulkanDevice& d
     allocInfo.commandBufferCount = 1;
 
     VkCommandBuffer cmd;
-    vkAllocateCommandBuffers(device.device(), &allocInfo, &cmd);
+    if (vkAllocateCommandBuffers(device.device(), &allocInfo, &cmd) != VK_SUCCESS) {
+        LOGE("Failed to allocate command buffer");
+        return VK_NULL_HANDLE;
+    }
 
-    vkResetFences(device.device(), 1, &m_fence);
+    if (vkResetFences(device.device(), 1, &m_fence) != VK_SUCCESS) {
+        LOGE("Failed to reset fence");
+        vkFreeCommandBuffers(device.device(), m_pool, 1, &cmd);
+        return VK_NULL_HANDLE;
+    }
 
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    vkBeginCommandBuffer(cmd, &beginInfo);
+    if (vkBeginCommandBuffer(cmd, &beginInfo) != VK_SUCCESS) {
+        LOGE("Failed to begin command buffer");
+        vkFreeCommandBuffers(device.device(), m_pool, 1, &cmd);
+        return VK_NULL_HANDLE;
+    }
 
     return cmd;
 }
 
 void VulkanCommandPool::endSingleTimeCommands(const VulkanDevice& device, VkCommandBuffer cmd) {
-    vkEndCommandBuffer(cmd);
+    if (vkEndCommandBuffer(cmd) != VK_SUCCESS) {
+        LOGE("Failed to end command buffer");
+        vkFreeCommandBuffers(device.device(), m_pool, 1, &cmd);
+        return;
+    }
 
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &cmd;
 
-    vkQueueSubmit(device.computeQueue(), 1, &submitInfo, m_fence);
-    vkWaitForFences(device.device(), 1, &m_fence, VK_TRUE, UINT64_MAX);
+    VkResult result = vkQueueSubmit(device.computeQueue(), 1, &submitInfo, m_fence);
+    if (result != VK_SUCCESS) {
+        LOGE("Queue submit failed: %d", result);
+        vkFreeCommandBuffers(device.device(), m_pool, 1, &cmd);
+        return;
+    }
+
+    result = vkWaitForFences(device.device(), 1, &m_fence, VK_TRUE, UINT64_MAX);
+    if (result != VK_SUCCESS) {
+        LOGE("Wait for fences failed: %d", result);
+    }
 
     vkFreeCommandBuffers(device.device(), m_pool, 1, &cmd);
 }

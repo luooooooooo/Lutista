@@ -66,9 +66,10 @@ vec3 linearToSrgb(vec3 l) {
 }
 // Linear sRGB to Oklab
 vec3 linearToOklab(vec3 c) {
-    float l = 0.4122214708*c.r + 0.5363325363*c.g + 0.0514459929*c.b;
-    float m = 0.2119034982*c.r + 0.6806995451*c.g + 0.1073969566*c.b;
-    float s = 0.0883024619*c.r + 0.2817188376*c.g + 0.6299787005*c.b;
+    // Ensure non-negative input to pow(1/3) for numerical stability on Mali
+    float l = max(0.0, 0.4122214708*c.r + 0.5363325363*c.g + 0.0514459929*c.b);
+    float m = max(0.0, 0.2119034982*c.r + 0.6806995451*c.g + 0.1073969566*c.b);
+    float s = max(0.0, 0.0883024619*c.r + 0.2817188376*c.g + 0.6299787005*c.b);
     float l_ = pow(l, 1.0/3.0);
     float m_ = pow(m, 1.0/3.0);
     float s_ = pow(s, 1.0/3.0);

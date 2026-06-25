@@ -17,6 +17,7 @@ public:
     uint32_t computeQueueFamily() const { return m_computeQueueFamily; }
     const VkPhysicalDeviceMemoryProperties& memoryProperties() const { return m_memoryProperties; }
     const VkPhysicalDeviceLimits& limits() const { return m_limits; }
+    const VkPhysicalDeviceFeatures& features() const { return m_features; }
 
     uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) const;
 
@@ -28,6 +29,7 @@ private:
     uint32_t m_computeQueueFamily = 0;
     VkPhysicalDeviceMemoryProperties m_memoryProperties{};
     VkPhysicalDeviceLimits m_limits{};
+    VkPhysicalDeviceFeatures m_features{};
 
     bool createInstance();
     bool selectPhysicalDevice();

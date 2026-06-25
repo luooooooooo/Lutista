@@ -13,6 +13,24 @@
 static constexpr uint32_t WORKGROUP_SIZE_X = 16;
 static constexpr uint32_t WORKGROUP_SIZE_Y = 16;
 
+// Convert single-precision float to half-precision (IEEE 754 binary16)
+static uint16_t floatToHalf(float f) {
+    uint32_t u;
+    memcpy(&u, &f, sizeof(u));
+    uint16_t sign = static_cast<uint16_t>((u >> 16) & 0x8000);
+    int32_t exp = static_cast<int32_t>(((u >> 23) & 0xFF) - 127 + 15);
+    uint32_t mantissa = u & 0x007FFFFF;
+    if (exp >= 31) {
+        return sign | 0x7C00;
+    }
+    if (exp <= 0) {
+        if (exp <= -10) return sign;
+        mantissa = (mantissa | 0x00800000) >> (1 - exp);
+        return sign | static_cast<uint16_t>(mantissa >> 13);
+    }
+    return sign | static_cast<uint16_t>(exp << 10) | static_cast<uint16_t>(mantissa >> 13);
+}
+
 // ============================================================================
 // init
 // ============================================================================
@@ -71,6 +89,37 @@ bool VulkanEngine::init(const std::map<std::string, std::vector<uint8_t>>& shade
     identityCurves[1026] = 0.0f;
     identityCurves[1027] = 0.0f;
     m_curveBuffer.upload(m_device.device(), identityCurves, 4112);
+
+    // Wire UBO and Curve SSBO descriptors once — these buffers never change
+    initStaticDescriptors();
+
+    // Create placeholder 1x1x1 LUT images to avoid null descriptors
+    for (int i = 0; i < 2; i++) {
+        VkFormat fmt = VK_FORMAT_R32G32B32A32_SFLOAT;
+        if (!m_lutImage[i].createSampledImage3D(m_device, 1, 1, 1, fmt)) {
+            fmt = VK_FORMAT_R16G16B16A16_SFLOAT;
+            if (!m_lutImage[i].createSampledImage3D(m_device, 1, 1, 1, fmt)) {
+                fmt = VK_FORMAT_R8G8B8A8_UNORM;
+                if (!m_lutImage[i].createSampledImage3D(m_device, 1, 1, 1, fmt)) {
+                    LOGE("Failed to create placeholder LUT[%d] — null descriptor fallback", i);
+                }
+            }
+        }
+    }
+
+    // Transition placeholder LUTs to SHADER_READ_ONLY so descriptor layout matches
+    {
+        VkCommandBuffer cmd = m_cmdPool.beginSingleTimeCommands(m_device);
+        if (cmd != VK_NULL_HANDLE) {
+            for (int i = 0; i < 2; i++) {
+                if (m_lutImage[i].image() != VK_NULL_HANDLE) {
+                    m_lutImage[i].transitionLayout(cmd, VK_IMAGE_LAYOUT_UNDEFINED,
+                                                   VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+                }
+            }
+            m_cmdPool.endSingleTimeCommands(m_device, cmd);
+        }
+    }
 
     m_initialized = true;
     LOGI("VulkanEngine initialized successfully (unified RGBA8 pipeline)");
@@ -296,35 +345,13 @@ bool VulkanEngine::uploadUbo(const FilterParams& params) {
 }
 
 // ============================================================================
-// updateDescriptorSets
+// initStaticDescriptors
 //
-// Writes all 6 bindings for both descriptor sets (A and B).
-// Set A: read image[0], write image[1]
-// Set B: read image[1], write image[0]
+// Writes UBO (binding 4) and Curve SSBO (binding 5) once during init.
+// These buffers never change handle — only their data is uploaded later.
 // ============================================================================
-void VulkanEngine::updateDescriptorSets() {
+void VulkanEngine::initStaticDescriptors() {
     VkDevice dev = m_device.device();
-
-    // Placeholder LUT info for when no LUT has been uploaded.
-    // We still need valid descriptors; the shader checks enableLut flags.
-    VkDescriptorImageInfo placeholderLutInfo{};
-    placeholderLutInfo.sampler = VK_NULL_HANDLE;
-    placeholderLutInfo.imageView = VK_NULL_HANDLE;
-    placeholderLutInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-    // Prepare LUT descriptor info
-    VkDescriptorImageInfo lut1Info = placeholderLutInfo;
-    VkDescriptorImageInfo lut2Info = placeholderLutInfo;
-    if (m_lutUploaded[0]) {
-        lut1Info.sampler = m_lutImage[0].sampler();
-        lut1Info.imageView = m_lutImage[0].imageView();
-        lut1Info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    }
-    if (m_lutUploaded[1]) {
-        lut2Info.sampler = m_lutImage[1].sampler();
-        lut2Info.imageView = m_lutImage[1].imageView();
-        lut2Info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    }
 
     VkDescriptorBufferInfo uboInfo{};
     uboInfo.buffer = m_uboBuffer.buffer();
@@ -334,19 +361,60 @@ void VulkanEngine::updateDescriptorSets() {
     VkDescriptorBufferInfo curveInfo{};
     curveInfo.buffer = m_curveBuffer.buffer();
     curveInfo.offset = 0;
-    curveInfo.range = 4112; // 1028 floats (1024 LUT + 4 sentinels)
+    curveInfo.range = 4112;
 
-    // We'll write both sets in one call.
-    // Each set has 6 bindings -> 12 writes total.
-    VkWriteDescriptorSet writes[12]{};
+    VkWriteDescriptorSet writes[4]{};
 
     for (int set = 0; set < 2; set++) {
-        int readImg = set;       // set 0 reads image[0], set 1 reads image[1]
-        int writeImg = 1 - set;  // set 0 writes image[1], set 1 writes image[0]
-        int base = set * 6;
+        int base = set * 2;
 
-        // binding 0: input storage image (readonly)
-        static VkDescriptorImageInfo imgInfoA[2];
+        writes[base + 0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[base + 0].dstSet = m_descriptorSets[set];
+        writes[base + 0].dstBinding = 4;
+        writes[base + 0].descriptorCount = 1;
+        writes[base + 0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        writes[base + 0].pBufferInfo = &uboInfo;
+
+        writes[base + 1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[base + 1].dstSet = m_descriptorSets[set];
+        writes[base + 1].dstBinding = 5;
+        writes[base + 1].descriptorCount = 1;
+        writes[base + 1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        writes[base + 1].pBufferInfo = &curveInfo;
+    }
+
+    vkUpdateDescriptorSets(dev, 4, writes, 0, nullptr);
+}
+
+// ============================================================================
+// updateDescriptorSets
+//
+// Writes bindings 0-3 (storage images + LUT samplers) for both descriptor sets.
+// UBO (binding 4) and Curve SSBO (binding 5) are wired once via initStaticDescriptors().
+// ============================================================================
+void VulkanEngine::updateDescriptorSets() {
+    VkDevice dev = m_device.device();
+
+    VkDescriptorImageInfo lut1Info{};
+    lut1Info.sampler = m_lutImage[0].sampler();
+    lut1Info.imageView = m_lutImage[0].imageView();
+    lut1Info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    VkDescriptorImageInfo lut2Info{};
+    lut2Info.sampler = m_lutImage[1].sampler();
+    lut2Info.imageView = m_lutImage[1].imageView();
+    lut2Info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    VkWriteDescriptorSet writes[8]{};
+    VkDescriptorImageInfo imgInfoA[2]{};
+    VkDescriptorImageInfo imgInfoB[2]{};
+
+    for (int set = 0; set < 2; set++) {
+        int readImg = set;
+        int writeImg = 1 - set;
+        int base = set * 4;
+
+        // binding 0: input storage image
         imgInfoA[readImg].imageView = m_storageImage[readImg].imageView();
         imgInfoA[readImg].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 
@@ -358,7 +426,6 @@ void VulkanEngine::updateDescriptorSets() {
         writes[base + 0].pImageInfo = &imgInfoA[readImg];
 
         // binding 1: output storage image
-        static VkDescriptorImageInfo imgInfoB[2];
         imgInfoB[writeImg].imageView = m_storageImage[writeImg].imageView();
         imgInfoB[writeImg].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 
@@ -369,7 +436,7 @@ void VulkanEngine::updateDescriptorSets() {
         writes[base + 1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
         writes[base + 1].pImageInfo = &imgInfoB[writeImg];
 
-        // binding 2: LUT1 combined image sampler
+        // binding 2: LUT1
         writes[base + 2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writes[base + 2].dstSet = m_descriptorSets[set];
         writes[base + 2].dstBinding = 2;
@@ -377,32 +444,58 @@ void VulkanEngine::updateDescriptorSets() {
         writes[base + 2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         writes[base + 2].pImageInfo = &lut1Info;
 
-        // binding 3: LUT2 combined image sampler
+        // binding 3: LUT2
         writes[base + 3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writes[base + 3].dstSet = m_descriptorSets[set];
         writes[base + 3].dstBinding = 3;
         writes[base + 3].descriptorCount = 1;
         writes[base + 3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         writes[base + 3].pImageInfo = &lut2Info;
-
-        // binding 4: UBO
-        writes[base + 4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[base + 4].dstSet = m_descriptorSets[set];
-        writes[base + 4].dstBinding = 4;
-        writes[base + 4].descriptorCount = 1;
-        writes[base + 4].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        writes[base + 4].pBufferInfo = &uboInfo;
-
-        // binding 5: curve SSBO
-        writes[base + 5].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[base + 5].dstSet = m_descriptorSets[set];
-        writes[base + 5].dstBinding = 5;
-        writes[base + 5].descriptorCount = 1;
-        writes[base + 5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        writes[base + 5].pBufferInfo = &curveInfo;
     }
 
-    vkUpdateDescriptorSets(dev, 12, writes, 0, nullptr);
+    vkUpdateDescriptorSets(dev, 8, writes, 0, nullptr);
+}
+
+// ============================================================================
+// updateLutDescriptors
+//
+// Writes only LUT samplers (bindings 2-3) for both descriptor sets.
+// Used after uploadLut() to avoid rewriting unchanged storage/UBO/SSBO bindings.
+// ============================================================================
+void VulkanEngine::updateLutDescriptors() {
+    VkDevice dev = m_device.device();
+
+    VkDescriptorImageInfo lut1Info{};
+    lut1Info.sampler = m_lutImage[0].sampler();
+    lut1Info.imageView = m_lutImage[0].imageView();
+    lut1Info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    VkDescriptorImageInfo lut2Info{};
+    lut2Info.sampler = m_lutImage[1].sampler();
+    lut2Info.imageView = m_lutImage[1].imageView();
+    lut2Info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    VkWriteDescriptorSet writes[4]{};
+
+    for (int set = 0; set < 2; set++) {
+        int base = set * 2;
+
+        writes[base + 0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[base + 0].dstSet = m_descriptorSets[set];
+        writes[base + 0].dstBinding = 2;
+        writes[base + 0].descriptorCount = 1;
+        writes[base + 0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[base + 0].pImageInfo = &lut1Info;
+
+        writes[base + 1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[base + 1].dstSet = m_descriptorSets[set];
+        writes[base + 1].dstBinding = 3;
+        writes[base + 1].descriptorCount = 1;
+        writes[base + 1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[base + 1].pImageInfo = &lut2Info;
+    }
+
+    vkUpdateDescriptorSets(dev, 4, writes, 0, nullptr);
 }
 
 // ============================================================================
@@ -457,6 +550,8 @@ bool VulkanEngine::ensureImageSize(uint32_t width, uint32_t height) {
 // uploadLut
 // ============================================================================
 void VulkanEngine::uploadLut(const float* lutData, uint32_t lutSize, int slot) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+
     if (!m_initialized || slot < 0 || slot > 1) return;
 
     auto now = []() -> int64_t {
@@ -474,7 +569,6 @@ void VulkanEngine::uploadLut(const float* lutData, uint32_t lutSize, int slot) {
     // lutData is float[R,G,B] per entry (3 floats), total entries = lutSize^3.
     // Expand to RGBA32F (4 floats per entry) for the 3D texture.
     uint32_t totalEntries = lutSize * lutSize * lutSize;
-    VkDeviceSize dstDataSize = static_cast<VkDeviceSize>(totalEntries) * 4 * sizeof(float);
 
     std::vector<float> rgbaData(totalEntries * 4);
     for (uint32_t i = 0; i < totalEntries; i++) {
@@ -487,11 +581,27 @@ void VulkanEngine::uploadLut(const float* lutData, uint32_t lutSize, int slot) {
     // Destroy old LUT image if it exists
     m_lutImage[slot].destroy(dev);
 
-    // Create 3D sampled image (RGBA32F for LUT precision)
-    if (!m_lutImage[slot].createSampledImage3D(m_device, lutSize, lutSize, lutSize,
-                                                VK_FORMAT_R32G32B32A32_SFLOAT)) {
-        LOGE("Failed to create 3D LUT image (slot %d, size %u)", slot, lutSize);
-        return;
+    // Try RGBA32F first, fall back to RGBA16F
+    VkFormat lutFormat = VK_FORMAT_R32G32B32A32_SFLOAT;
+    if (!m_lutImage[slot].createSampledImage3D(m_device, lutSize, lutSize, lutSize, lutFormat)) {
+        lutFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
+        if (!m_lutImage[slot].createSampledImage3D(m_device, lutSize, lutSize, lutSize, lutFormat)) {
+            LOGE("Failed to create 3D LUT image (slot %d, size %u)", slot, lutSize);
+            return;
+        }
+    }
+
+    // Prepare upload data in the correct format
+    const void* uploadSrc = rgbaData.data();
+    VkDeviceSize dstDataSize = static_cast<VkDeviceSize>(totalEntries) * 4 * sizeof(float);
+    std::vector<uint16_t> halfData;
+    if (lutFormat == VK_FORMAT_R16G16B16A16_SFLOAT) {
+        halfData.resize(rgbaData.size());
+        for (size_t i = 0; i < rgbaData.size(); i++) {
+            halfData[i] = floatToHalf(rgbaData[i]);
+        }
+        uploadSrc = halfData.data();
+        dstDataSize = halfData.size() * sizeof(uint16_t);
     }
 
     // Create a temporary staging buffer for upload
@@ -504,7 +614,7 @@ void VulkanEngine::uploadLut(const float* lutData, uint32_t lutSize, int slot) {
         return;
     }
 
-    if (!uploadBuffer.upload(dev, rgbaData.data(), dstDataSize)) {
+    if (!uploadBuffer.upload(dev, uploadSrc, dstDataSize)) {
         LOGE("Failed to upload LUT data to staging buffer");
         uploadBuffer.destroy(dev);
         return;
@@ -512,16 +622,21 @@ void VulkanEngine::uploadLut(const float* lutData, uint32_t lutSize, int slot) {
 
     // Record and submit copy commands
     VkCommandBuffer cmd = m_cmdPool.beginSingleTimeCommands(m_device);
+    if (cmd == VK_NULL_HANDLE) {
+        LOGE("Failed to begin command buffer for LUT upload");
+        uploadBuffer.destroy(dev);
+        return;
+    }
 
     // Transition 3D image: UNDEFINED -> TRANSFER_DST
     m_lutImage[slot].transitionLayout(cmd, VK_IMAGE_LAYOUT_UNDEFINED,
                                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
-    // Copy buffer to image
+    // Copy buffer to image — set explicit strides for Mali 3D texture compatibility
     VkBufferImageCopy region{};
     region.bufferOffset = 0;
-    region.bufferRowLength = 0;
-    region.bufferImageHeight = 0;
+    region.bufferRowLength = lutSize;
+    region.bufferImageHeight = lutSize;
     region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
     region.imageOffset = {0, 0, 0};
     region.imageExtent = {lutSize, lutSize, lutSize};
@@ -541,8 +656,8 @@ void VulkanEngine::uploadLut(const float* lutData, uint32_t lutSize, int slot) {
 
     m_lutUploaded[slot] = true;
 
-    // Update descriptor sets to reference the new LUT
-    updateDescriptorSets();
+    // Update LUT descriptor bindings only — UBO/SSBO/storage images unchanged
+    updateLutDescriptors();
 
     int64_t t2 = now();
     LOGI("LUT uploaded (slot %d, size %u): idle=%lldms upload=%lldms total=%lldms",
@@ -623,6 +738,10 @@ bool VulkanEngine::processImage(uint8_t* rgbaData, uint32_t width, uint32_t heig
 
     // Record command buffer
     VkCommandBuffer cmd = m_cmdPool.beginSingleTimeCommands(m_device);
+    if (cmd == VK_NULL_HANDLE) {
+        LOGE("Failed to begin command buffer for processing");
+        return false;
+    }
 
     // --- Step 1: Copy transfer buffer -> storage image[0] ---
     m_storageImage[0].transitionLayout(cmd, VK_IMAGE_LAYOUT_UNDEFINED,
