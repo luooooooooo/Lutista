@@ -171,7 +171,7 @@ fun SettingsScreen(
                 }
                 OverlaySpinnerPreference(
                     title = "LUT精度",
-                    summary = "控制LUT上/下采样的精度，同时对统一LUT生效",
+                    summary = "控制LUT重采样的精度，同时对统一LUT生效",
                     items = precisionOptions,
                     selectedIndex = if (lutPrecision == LutPrecision.STANDARD) 0 else 1,
                     onSelectedIndexChange = { index ->

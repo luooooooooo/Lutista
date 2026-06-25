@@ -26,6 +26,7 @@ class LogManager(
     private val _logEntries = MutableStateFlow<List<LogEntry>>(emptyList())
     val logEntries: StateFlow<List<LogEntry>> = _logEntries.asStateFlow()
     private var fileTree: FileLogTree? = null
+    private var logcatCapture: LogcatCaptureManager? = null
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     init {
@@ -35,27 +36,46 @@ class LogManager(
 
     private fun setupTimber() {
         if (settingsManager.isLogEnabledSync()) {
-            fileTree = FileLogTree(logDir)
-            Timber.plant(fileTree!!)
+            startLogging()
         }
     }
 
     /**
-     * 观察 logEnabled 变化，运行时动态开关文件日志
+     * 观察 logEnabled 变化，运行时动态开关文件日志 + logcat 捕获
      * 必须在主线程调用，确保 SettingsManager Flow 正常运行
      */
     fun observeLogEnabled() {
         appScope.launch {
             settingsManager.logEnabled.collect { enabled ->
-                if (enabled && fileTree == null) {
-                    fileTree = FileLogTree(logDir)
-                    Timber.plant(fileTree!!)
-                } else if (!enabled && fileTree != null) {
-                    Timber.uproot(fileTree!!)
-                    fileTree = null
+                if (enabled) {
+                    startLogging()
+                } else {
+                    stopLogging()
                 }
             }
         }
+    }
+
+    private fun startLogging() {
+        if (fileTree == null) {
+            fileTree = FileLogTree(logDir)
+            Timber.plant(fileTree!!)
+        }
+        if (logcatCapture == null) {
+            logcatCapture = LogcatCaptureManager(logDir, settingsManager)
+            logcatCapture!!.start()
+        }
+    }
+
+    private fun stopLogging() {
+        if (fileTree != null) {
+            Timber.uproot(fileTree!!)
+            fileTree = null
+        }
+        logcatCapture?.destroy()
+        logcatCapture = null
+        // Clear all log files
+        logDir.listFiles()?.forEach { it.delete() }
     }
 
     fun d(tag: String, message: String) {

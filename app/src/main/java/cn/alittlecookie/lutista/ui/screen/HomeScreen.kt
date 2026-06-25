@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.net.Uri
 import android.os.IBinder
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -85,6 +86,7 @@ fun HomeScreen(
     var isMonitorRunning by remember { mutableStateOf(false) }
     var monitorRunningPersisted by remember { mutableStateOf(settingsManager.getMonitorRunningSync()) }
     var processedCount by remember { mutableIntStateOf(settingsManager.getProcessedCountSync()) }
+    var pendingStartAfterPathSelect by remember { mutableStateOf(false) }
 
     var isCameraMode by remember { mutableStateOf(false) }
     var onlyNewFiles by remember { mutableStateOf(settingsManager.getOnlyNewFilesSync()) }
@@ -172,6 +174,16 @@ fun HomeScreen(
         context.startService(intent)
     }
 
+    // Auto-start service when monitorPath becomes available after SAF selection
+    LaunchedEffect(monitorPath) {
+        if (pendingStartAfterPathSelect && monitorPath.isNotEmpty()) {
+            pendingStartAfterPathSelect = false
+            isMonitorRunning = true
+            settingsManager.setMonitorRunning(true)
+            startMonitorService()
+        }
+    }
+
     DisposableEffect(monitorRunningPersisted) {
         if (!monitorRunningPersisted) return@DisposableEffect onDispose { }
 
@@ -237,14 +249,27 @@ fun HomeScreen(
                 processedCount = processedCount,
                 isCameraMode = isCameraMode,
                 onMonitorToggle = {
-                    val newState = !isMonitorRunning
-                    isMonitorRunning = newState
-                    scope.launch {
-                        if (newState && monitorPath.isNotEmpty()) {
-                            startMonitorService()
+                    if (!isMonitorRunning) {
+                        val noFilter = selectedFilterIndex == 0
+                        val noWatermark = selectedWatermarkIndex == 0
+                        if (noFilter && noWatermark) {
+                            Toast.makeText(context, "需要至少应用一个效果", Toast.LENGTH_SHORT).show()
+                        } else if (monitorPath.isEmpty()) {
+                            Toast.makeText(context, "请选择要监控的文件夹", Toast.LENGTH_SHORT).show()
+                            pendingStartAfterPathSelect = true
+                            onMonitorFolderClick()
+                        } else {
+                            isMonitorRunning = true
+                            scope.launch {
+                                settingsManager.setMonitorRunning(true)
+                                startMonitorService()
+                            }
                         }
-                        settingsManager.setMonitorRunning(newState)
-                        if (!newState) {
+                    } else {
+                        isMonitorRunning = false
+                        pendingStartAfterPathSelect = false
+                        scope.launch {
+                            settingsManager.setMonitorRunning(false)
                             stopMonitorService()
                         }
                     }
