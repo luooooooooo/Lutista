@@ -722,9 +722,23 @@ private fun TextPropertyContent(
 
     // 2. 字号
     var fontSize by remember(element.fontSize) { mutableFloatStateOf(element.fontSize) }
-    SliderWithValue(label = "字号 (gm)", value = fontSize, onValueChange = { fontSize = it },
+    SliderWithValue(label = "字号 (gm)", value = fontSize, onValueChange = { fontSize = it.roundToInt().toFloat() },
         onValueChangeFinished = { state.updateTextElement(element.id) { it.copy(fontSize = fontSize) } },
-        valueRange = 1f..80f, valueFormatter = { "%.1f".format(it) })
+        valueRange = 0f..600f, valueFormatter = { "%.0f".format(it) })
+
+    // 2b. 字间距
+    var letterSpacing by remember(element.letterSpacing) { mutableFloatStateOf(element.letterSpacing) }
+    SliderWithValue(label = "字间距 (gm)", value = letterSpacing,
+        onValueChange = { letterSpacing = (it / 5f).roundToInt() * 5f },
+        onValueChangeFinished = { state.updateTextElement(element.id) { it.copy(letterSpacing = letterSpacing) } },
+        valueRange = -200f..200f, valueFormatter = { "%.0f".format(it) })
+
+    // 2c. 行间距
+    var lineHeight by remember(element.lineHeight) { mutableFloatStateOf(element.lineHeight) }
+    SliderWithValue(label = "行间距", value = lineHeight,
+        onValueChange = { lineHeight = (it * 10f).roundToInt() / 10f },
+        onValueChangeFinished = { state.updateTextElement(element.id) { it.copy(lineHeight = lineHeight) } },
+        valueRange = 0f..5f, valueFormatter = { "%.1f".format(it) })
 
     // 3. 字体
     SectionTitle("字体")

@@ -20,7 +20,8 @@ class TextMeasurer(private val converter: UnitConverter) {
         val paint = createPaint(element)
         val layout = createLayout(paint, element.content, Int.MAX_VALUE, element)
         val width = (0 until layout.lineCount).maxOf { layout.getLineWidth(it) }
-        val height = layout.height.toFloat()
+        val fontHeight = paint.fontMetrics.let { it.descent - it.ascent }
+        val height = maxOf(layout.height.toFloat(), fontHeight)
         val size = Size(width, height)
         unconstrainedCache[key] = size
         return size
@@ -33,7 +34,8 @@ class TextMeasurer(private val converter: UnitConverter) {
         val paint = createPaint(element)
         val layout = createLayout(paint, element.content, maxWidth.toInt(), element)
         val width = (0 until layout.lineCount).maxOf { layout.getLineWidth(it) }
-        val height = layout.height.toFloat()
+        val fontHeight = paint.fontMetrics.let { it.descent - it.ascent }
+        val height = maxOf(layout.height.toFloat(), fontHeight)
         val size = Size(width, height)
         constrainedCache[key] = size
         return size
@@ -61,7 +63,7 @@ class TextMeasurer(private val converter: UnitConverter) {
         return StaticLayout.Builder.obtain(
             text, 0, text.length, paint, maxWidth
         ).apply {
-            setLineSpacing(0f, element.lineHeight)
+            setLineSpacing(0f, maxOf(element.lineHeight, 0.001f))
             setIncludePad(false)
             setAlignment(
                 when (element.textAlign) {

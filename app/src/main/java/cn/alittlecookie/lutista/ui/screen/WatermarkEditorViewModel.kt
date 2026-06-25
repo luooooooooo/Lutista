@@ -326,7 +326,7 @@ class WatermarkEditorViewModel(
     fun addTextElement() {
         val id = "t_${UUID.randomUUID().toString().take(8)}"
         val newElement = TextElement(
-            id = id, content = "文字", fontSize = 10f,
+            id = id, content = "文字", fontSize = 50f,
             color = android.graphics.Color.BLACK
         )
         addElementToList(newElement)
@@ -538,6 +538,7 @@ class WatermarkEditorViewModel(
 
     companion object {
         private const val ASSETS_DIR = "watermark_assets"
+        private const val MAX_BITMAP_DIM = 4096
 
         fun renderTextToBitmap(
             element: TextElement,
@@ -560,7 +561,7 @@ class WatermarkEditorViewModel(
                 element.content, 0, element.content.length, paint,
                 ceil(bounds.width).toInt()
             ).apply {
-                setLineSpacing(0f, element.lineHeight)
+                setLineSpacing(0f, maxOf(element.lineHeight, 0.001f))
                 setIncludePad(false)
                 setAlignment(
                     when (element.textAlign) {
@@ -572,13 +573,23 @@ class WatermarkEditorViewModel(
             }.build()
 
             val w = ceil(bounds.width).toInt()
-            val h = ceil(bounds.height).toInt()
+            val fontHeight = paint.fontMetrics.let { it.descent - it.ascent }
+            val h = maxOf(ceil(bounds.height).toInt(), ceil(fontHeight).toInt())
             if (w <= 0 || h <= 0) {
                 return Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
             }
 
-            val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+            // Prevent bitmap exceeding Canvas limit (~100MB) for very large text
+            val maxDim = maxOf(w, h)
+            val scale = if (maxDim > MAX_BITMAP_DIM) MAX_BITMAP_DIM.toFloat() / maxDim else 1f
+            val renderW = maxOf(1, (w * scale).toInt())
+            val renderH = maxOf(1, (h * scale).toInt())
+
+            val bitmap = Bitmap.createBitmap(renderW, renderH, Bitmap.Config.ARGB_8888)
             val canvas = AndroidCanvas(bitmap)
+            if (scale < 1f) {
+                canvas.scale(scale, scale)
+            }
             layout.draw(canvas)
             return bitmap
         }

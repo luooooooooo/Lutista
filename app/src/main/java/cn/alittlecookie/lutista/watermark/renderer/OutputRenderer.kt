@@ -284,7 +284,7 @@ class OutputRenderer(private val bitmapCache: BitmapCache) {
         val layout = StaticLayout.Builder.obtain(
             element.content, 0, element.content.length, paint, ceil(bounds.width).toInt()
         ).apply {
-            setLineSpacing(0f, element.lineHeight)
+            setLineSpacing(0f, maxOf(element.lineHeight, 0.001f))
             setIncludePad(false)
             setAlignment(
                 when (element.textAlign) {
