@@ -1197,6 +1197,11 @@ private fun ColorPickerButton(
     onColorChange: (Int) -> Unit
 ) {
     var showDialog by remember { mutableStateOf(false) }
+    var dialogColor by remember { mutableIntStateOf(currentColor) }
+
+    LaunchedEffect(showDialog) {
+        if (showDialog) dialogColor = currentColor
+    }
 
     Box(
         modifier = Modifier
@@ -1232,9 +1237,9 @@ private fun ColorPickerButton(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 ColorPalette(
-                    color = Color(currentColor),
+                    color = Color(dialogColor),
                     onColorChanged = { newColor ->
-                        onColorChange(newColor.toArgb())
+                        dialogColor = newColor.toArgb()
                     },
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -1242,7 +1247,10 @@ private fun ColorPickerButton(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Button(
-                    onClick = { showDialog = false },
+                    onClick = {
+                        onColorChange(dialogColor)
+                        showDialog = false
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(color = MiuixTheme.colorScheme.primary)
                 ) {
