@@ -41,6 +41,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
+import kotlin.math.ceil
 import android.graphics.Canvas as AndroidCanvas
 
 class WatermarkEditorViewModel(
@@ -557,7 +558,7 @@ class WatermarkEditorViewModel(
 
             val layout = StaticLayout.Builder.obtain(
                 element.content, 0, element.content.length, paint,
-                bounds.width.toInt()
+                ceil(bounds.width).toInt()
             ).apply {
                 setLineSpacing(0f, element.lineHeight)
                 setIncludePad(false)
@@ -570,8 +571,8 @@ class WatermarkEditorViewModel(
                 )
             }.build()
 
-            val w = bounds.width.toInt()
-            val h = bounds.height.toInt()
+            val w = ceil(bounds.width).toInt()
+            val h = ceil(bounds.height).toInt()
             if (w <= 0 || h <= 0) {
                 return Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
             }

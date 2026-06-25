@@ -108,6 +108,7 @@ import top.yukonga.miuix.kmp.icon.extended.Sort
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.overlay.OverlayListPopup
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import kotlin.math.roundToInt
 
 @Composable
 fun WatermarkEditorScreen(
@@ -897,18 +898,14 @@ private fun BaseImageEditor(
                 it.copy(borderWidth = BorderWidth(borderTop, borderRight, borderBottom, borderLeft))
             }
         }
-        SliderWithValue(label = "上", value = borderTop, onValueChange = { borderTop = it },
-            onValueChangeFinished = { updateBorder() }, valueRange = 0f..150f,
-            valueFormatter = { "%.1f".format(it) })
-        SliderWithValue(label = "右", value = borderRight, onValueChange = { borderRight = it },
-            onValueChangeFinished = { updateBorder() }, valueRange = 0f..150f,
-            valueFormatter = { "%.1f".format(it) })
-        SliderWithValue(label = "下", value = borderBottom, onValueChange = { borderBottom = it },
-            onValueChangeFinished = { updateBorder() }, valueRange = 0f..150f,
-            valueFormatter = { "%.1f".format(it) })
-        SliderWithValue(label = "左", value = borderLeft, onValueChange = { borderLeft = it },
-            onValueChangeFinished = { updateBorder() }, valueRange = 0f..150f,
-            valueFormatter = { "%.1f".format(it) })
+        SliderWithValue(label = "上", value = borderTop, onValueChange = { borderTop = (it / 5f).roundToInt() * 5f },
+            onValueChangeFinished = { updateBorder() }, valueRange = 0f..1000f)
+        SliderWithValue(label = "右", value = borderRight, onValueChange = { borderRight = (it / 5f).roundToInt() * 5f },
+            onValueChangeFinished = { updateBorder() }, valueRange = 0f..1000f)
+        SliderWithValue(label = "下", value = borderBottom, onValueChange = { borderBottom = (it / 5f).roundToInt() * 5f },
+            onValueChangeFinished = { updateBorder() }, valueRange = 0f..1000f)
+        SliderWithValue(label = "左", value = borderLeft, onValueChange = { borderLeft = (it / 5f).roundToInt() * 5f },
+            onValueChangeFinished = { updateBorder() }, valueRange = 0f..1000f)
 
         SectionTitle("边框颜色")
         var borderColor by remember(state.scene.baseImage.borderColor) {
@@ -1242,7 +1239,8 @@ private fun ColorPickerButton(
 private fun SliderWithValue(
     label: String, value: Float, onValueChange: (Float) -> Unit,
     onValueChangeFinished: () -> Unit, valueRange: ClosedFloatingPointRange<Float>,
-    valueFormatter: (Float) -> String = { "%.0f".format(it) }
+    valueFormatter: (Float) -> String = { "%.0f".format(it) },
+    steps: Int = 0
 ) {
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
         Row(modifier = Modifier.fillMaxWidth().padding(start = 0.dp, end = 0.dp, bottom = 2.dp),
@@ -1251,6 +1249,6 @@ private fun SliderWithValue(
             Text(valueFormatter(value), fontSize = 14.sp, color = MiuixTheme.colorScheme.primary)
         }
         Slider(value = value, onValueChange = onValueChange, onValueChangeFinished = onValueChangeFinished,
-            valueRange = valueRange)
+            valueRange = valueRange, steps = steps)
     }
 }

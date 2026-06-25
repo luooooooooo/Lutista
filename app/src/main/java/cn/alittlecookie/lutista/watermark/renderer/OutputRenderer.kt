@@ -282,7 +282,7 @@ class OutputRenderer(private val bitmapCache: BitmapCache) {
         }
 
         val layout = StaticLayout.Builder.obtain(
-            element.content, 0, element.content.length, paint, bounds.width.toInt()
+            element.content, 0, element.content.length, paint, ceil(bounds.width).toInt()
         ).apply {
             setLineSpacing(0f, element.lineHeight)
             setIncludePad(false)
