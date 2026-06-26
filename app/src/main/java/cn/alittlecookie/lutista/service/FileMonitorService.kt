@@ -6,9 +6,9 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
@@ -31,6 +31,7 @@ import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.time.Duration.Companion.milliseconds
 
 class FileMonitorService : LifecycleService(), KoinComponent {
 
@@ -119,7 +120,7 @@ class FileMonitorService : LifecycleService(), KoinComponent {
     private suspend fun scanAndProcessFiles() = withContext(Dispatchers.IO) {
         val isSafUri = monitorPath.startsWith("content://")
         val newFiles = if (isSafUri) {
-            scanSafFolder(Uri.parse(monitorPath))
+            scanSafFolder(monitorPath.toUri())
         } else {
             scanFolderWithMediaStore(monitorPath)
         }
@@ -196,7 +197,7 @@ class FileMonitorService : LifecycleService(), KoinComponent {
         var count = 0
         if (monitorPath.startsWith("content://")) {
             try {
-                val docDir = DocumentFile.fromTreeUri(this, Uri.parse(monitorPath))
+                val docDir = DocumentFile.fromTreeUri(this, monitorPath.toUri())
                 docDir?.listFiles()?.forEach { child ->
                     if (child.isFile && child.name != null && isImageFile(child.name!!)) {
                         scannedFiles.add(child.uri.toString())
@@ -238,7 +239,7 @@ class FileMonitorService : LifecycleService(), KoinComponent {
         if (imageFiles.isEmpty()) return results
 
         val sizesBefore = imageFiles.map { it.length() }
-        delay(FILE_STABILITY_DELAY)
+        delay(FILE_STABILITY_DELAY.milliseconds)
         val sizesAfter = imageFiles.map { it.length() }
 
         for (i in imageFiles.indices) {
@@ -289,7 +290,7 @@ class FileMonitorService : LifecycleService(), KoinComponent {
 
             logger.i(TAG, "SAF扫描: 发现 ${candidates.size} 个候选文件，等待 ${FILE_STABILITY_DELAY}ms")
             val sizesBefore = candidates.map { it.doc.length() }
-            delay(FILE_STABILITY_DELAY)
+            delay(FILE_STABILITY_DELAY.milliseconds)
             val sizesAfter = candidates.map { it.doc.length() }
 
             var stableCount = 0
@@ -333,7 +334,7 @@ class FileMonitorService : LifecycleService(), KoinComponent {
 
     private suspend fun isFileStable(file: File): Boolean = withContext(Dispatchers.IO) {
         val size1 = file.length()
-        delay(FILE_STABILITY_DELAY)
+        delay(FILE_STABILITY_DELAY.milliseconds)
         val size2 = file.length()
         size1 == size2 && size1 > 0
     }
@@ -362,17 +363,15 @@ class FileMonitorService : LifecycleService(), KoinComponent {
     }
 
     private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "文件监控",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "监控文件夹中的新图片"
-            }
-            val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-            manager.createNotificationChannel(channel)
+        val channel = NotificationChannel(
+            CHANNEL_ID,
+            "文件监控",
+            NotificationManager.IMPORTANCE_LOW
+        ).apply {
+            description = "监控文件夹中的新图片"
         }
+        val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+        manager.createNotificationChannel(channel)
     }
 
     private fun createNotification(count: Int): Notification {

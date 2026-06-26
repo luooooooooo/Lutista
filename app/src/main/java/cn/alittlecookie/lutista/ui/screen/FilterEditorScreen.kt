@@ -82,6 +82,7 @@ import top.yukonga.miuix.kmp.icon.extended.More
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.overlay.OverlayListPopup
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import kotlin.time.Duration.Companion.milliseconds
 
 // ── Tab 枚举 ────────────────────────────────────────────────────────
 
@@ -145,7 +146,7 @@ fun FilterEditorScreen(
 
     // 加载滤镜 & 初始化预览
     LaunchedEffect(filterId) {
-        kotlinx.coroutines.delay(1)
+        kotlinx.coroutines.delay(1.milliseconds)
         state.loadFilter()
         state.initPreview()
     }
