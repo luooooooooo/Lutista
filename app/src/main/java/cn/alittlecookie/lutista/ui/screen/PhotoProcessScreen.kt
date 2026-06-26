@@ -10,6 +10,8 @@ import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -47,6 +49,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -68,6 +71,7 @@ import cn.alittlecookie.lutista.watermark.model.Scene
 import cn.alittlecookie.lutista.watermark.renderer.WatermarkProcessor
 import coil.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -445,16 +449,26 @@ fun PhotoProcessScreen(
         }
     }
 
-    if (showResultScreen) {
-        ResultScreen(
-            photoCount = resultPhotoCount,
-            filterCount = perImageSettings.map { it.filterId }.distinct().size,
-            watermarkCount = perImageSettings.map { it.watermarkId }.distinct().size,
-            onContinueProcessing = onContinueProcessing,
-            onBackToHome = onBackClick
-        )
-        return
+    val pageAlpha by animateFloatAsState(
+        targetValue = if (showResultScreen) 1f else 0f,
+        animationSpec = tween(400)
+    )
+    if (showResultScreen || pageAlpha > 0f) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer(alpha = pageAlpha)
+        ) {
+            ResultScreen(
+                photoCount = resultPhotoCount,
+                filterCount = perImageSettings.map { it.filterId }.distinct().size,
+                watermarkCount = perImageSettings.map { it.watermarkId }.distinct().size,
+                onContinueProcessing = onContinueProcessing,
+                onBackToHome = onBackClick
+            )
+        }
     }
+    if (showResultScreen) return
 
     Scaffold(
         topBar = {
@@ -1097,6 +1111,15 @@ private fun ResultScreen(
     onContinueProcessing: () -> Unit,
     onBackToHome: () -> Unit
 ) {
+    var phase by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(Unit) {
+        phase = 1; delay(100)
+        phase = 2; delay(120)
+        phase = 3; delay(120)
+        phase = 4
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1105,87 +1128,91 @@ private fun ResultScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Box(
-            modifier = Modifier
-                .size(80.dp)
-                .background(
-                    color = Color(0xFF4CAF50),
-                    shape = CircleShape
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = MiuixIcons.Ok,
-                contentDescription = null,
-                tint = Color.White,
-                modifier = Modifier.size(40.dp)
-            )
+        PhaseElement(show = phase >= 1) {
+            Box(
+                modifier = Modifier
+                    .size(80.dp)
+                    .background(color = Color(0xFF4CAF50), shape = CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = MiuixIcons.Demibold.Ok,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(40.dp)
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        Text(
-            text = "处理完成",
-            fontSize = 24.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = MiuixTheme.colorScheme.onSurface
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Text(
-            text = "已成功处理 $photoCount 张图片",
-            fontSize = 15.sp,
-            color = MiuixTheme.colorScheme.onSurfaceVariantSummary
-        )
+        PhaseElement(show = phase >= 2) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = "处理完成",
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MiuixTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "已成功处理 $photoCount 张图片",
+                    fontSize = 15.sp,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary
+                )
+            }
+        }
 
         Spacer(modifier = Modifier.height(32.dp))
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly
-        ) {
-            StatisticItem("处理图片", photoCount)
-            StatisticItem("滤镜效果", filterCount)
-            StatisticItem("边框水印", watermarkCount)
+        PhaseElement(show = phase >= 3) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                StatisticItem("处理图片", photoCount)
+                StatisticItem("滤镜效果", filterCount)
+                StatisticItem("边框水印", watermarkCount)
+            }
         }
 
         Spacer(modifier = Modifier.height(48.dp))
 
-        Button(
-            onClick = onContinueProcessing,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(48.dp),
-            colors = ButtonDefaults.buttonColors(
-                color = MiuixTheme.colorScheme.primary
-            )
-        ) {
-            Text(
-                text = "继续处理图片",
-                fontSize = 17.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = Color.White
-            )
+        PhaseElement(show = phase >= 4) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Button(
+                    onClick = onContinueProcessing,
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    colors = ButtonDefaults.buttonColors(color = MiuixTheme.colorScheme.primary)
+                ) {
+                    Text(text = "继续处理图片", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                Button(
+                    onClick = onBackToHome,
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    colors = ButtonDefaults.buttonColors(color = MiuixTheme.colorScheme.secondary)
+                ) {
+                    Text(text = "返回主页", fontSize = 17.sp, color = MiuixTheme.colorScheme.primary)
+                }
+            }
         }
+    }
+}
 
-        Spacer(modifier = Modifier.height(12.dp))
-
-        Button(
-            onClick = onBackToHome,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(48.dp),
-            colors = ButtonDefaults.buttonColors(
-                color = MiuixTheme.colorScheme.secondary
-            )
-        ) {
-            Text(
-                text = "返回主页",
-                fontSize = 17.sp,
-                color = MiuixTheme.colorScheme.primary
-            )
+@Composable
+private fun PhaseElement(show: Boolean, content: @Composable () -> Unit) {
+    val progress by animateFloatAsState(
+        targetValue = if (show) 1f else 0f,
+        animationSpec = tween(500)
+    )
+    Box(
+        modifier = Modifier.graphicsLayer {
+            alpha = progress
+            translationY = (1f - progress) * 40f
         }
+    ) {
+        content()
     }
 }
 
