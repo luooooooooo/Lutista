@@ -295,7 +295,7 @@ private fun FilenameTemplatePreference(settingsManager: SettingsManager) {
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    text = "支持变量：\n· <fname>：文件名\n· <filter>：滤镜名\n· <yyyyMMdd...>：日期格式（JAVA）\n· <D+1>/<M+1>/<Y+1>：日/月/年累加",
+                    text = "支持变量：\n· <fname>：文件名\n· <filter>：滤镜名\n· <yyyyMMdd...>：日期格式（JAVA）\n· <D+1>/<M+1>/<Y+1>：日/月/年累加\n \n非 <> 包裹的内容将不会替换；\n文件名部分系统无法解析将使用缓存键值。",
                     fontSize = 13.sp,
                     color = Color(0xFF888888)
                 )
