@@ -5,6 +5,7 @@ import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -32,10 +33,14 @@ import cn.alittlecookie.lutista.manager.LogManager
 import cn.alittlecookie.lutista.manager.LutPrecision
 import cn.alittlecookie.lutista.manager.OutputFormat
 import cn.alittlecookie.lutista.manager.SettingsManager
+import cn.alittlecookie.lutista.data.repository.WatermarkRepository
 import cn.alittlecookie.lutista.ui.theme.getAppBarColor
 import cn.alittlecookie.lutista.ui.theme.lutistaBlurEffect
 import cn.alittlecookie.lutista.ui.theme.rememberLutistaBlurBackdrop
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.koin.compose.koinInject
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
@@ -54,6 +59,8 @@ import top.yukonga.miuix.kmp.preference.OverlaySpinnerPreference
 import top.yukonga.miuix.kmp.preference.SliderPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.utils.overScrollVertical
+import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.window.WindowDialog
 import kotlin.math.roundToInt
 
@@ -248,6 +255,8 @@ fun SettingsScreen(
                     }
                 )
 
+                CacheCleanPreference(context, settingsManager)
+
                 ArrowPreference(
                     title = "关于应用",
                     summary = "Version: $versionName",
@@ -322,4 +331,93 @@ private fun FilenameTemplatePreference(settingsManager: SettingsManager) {
             }
         }
     }
+}
+
+@Composable
+private fun CacheCleanPreference(context: android.content.Context, settingsManager: SettingsManager) {
+    val scope = rememberCoroutineScope()
+    var showDialog by remember { mutableStateOf(false) }
+    val watermarkRepository: WatermarkRepository = koinInject()
+
+    ArrowPreference(
+        title = "缓存清理",
+        summary = "清理所有log和无用资源",
+        onClick = { showDialog = true }
+    )
+
+    if (showDialog) {
+        OverlayDialog(
+            show = showDialog,
+            onDismissRequest = { showDialog = false }
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 0.dp, vertical = 0.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "清理所有的log和无用资源",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Button(
+                        onClick = { showDialog = false },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(color = MiuixTheme.colorScheme.secondaryContainer)
+                    ) {
+                        Text("取消", color = MiuixTheme.colorScheme.onSecondaryContainer)
+                    }
+                    Button(
+                        onClick = {
+                            showDialog = false
+                            scope.launch {
+                                withContext(Dispatchers.IO) {
+                                    cleanupCache(context, watermarkRepository)
+                                }
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(color = MiuixTheme.colorScheme.error)
+                    ) {
+                        Text("清除", color = Color.White)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private suspend fun cleanupCache(context: android.content.Context, watermarkRepository: WatermarkRepository) {
+    val logExportDir = java.io.File(context.cacheDir, "log_export")
+    deleteDir(logExportDir)
+
+    val logsDir = java.io.File(context.filesDir, "logs")
+    deleteDir(logsDir)
+
+    val assetsDir = java.io.File(context.filesDir, "watermark_assets")
+    if (assetsDir.isDirectory) {
+        val usedFiles = mutableSetOf<String>()
+        try {
+            val all = watermarkRepository.getAllWatermarks().first()
+            all.forEach { entity ->
+                val json = entity.configJson
+                Regex(""""imageUri"\s*:\s*"([^"]+)"""").findAll(json).forEach { m ->
+                    usedFiles.add(m.groupValues[1])
+                }
+            }
+        } catch (_: Exception) {}
+        assetsDir.listFiles()?.forEach { file ->
+            if (file.isFile && file.name !in usedFiles.map { it.substringAfterLast('/') }) {
+                file.delete()
+            }
+        }
+    }
+}
+
+private fun deleteDir(dir: java.io.File) {
+    dir.listFiles()?.forEach { it.deleteRecursively() }
 }
