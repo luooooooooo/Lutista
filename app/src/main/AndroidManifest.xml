@@ -44,6 +44,7 @@
 
         <activity
             android:name=".MainActivity"
+            android:configChanges="uiMode"
             android:exported="true"
             android:theme="@style/Theme.Lutista">
             <intent-filter>
