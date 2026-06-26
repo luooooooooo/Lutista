@@ -29,11 +29,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
+import cn.alittlecookie.lutista.data.repository.WatermarkRepository
 import cn.alittlecookie.lutista.manager.LogManager
 import cn.alittlecookie.lutista.manager.LutPrecision
 import cn.alittlecookie.lutista.manager.OutputFormat
 import cn.alittlecookie.lutista.manager.SettingsManager
-import cn.alittlecookie.lutista.data.repository.WatermarkRepository
 import cn.alittlecookie.lutista.ui.theme.getAppBarColor
 import cn.alittlecookie.lutista.ui.theme.lutistaBlurEffect
 import cn.alittlecookie.lutista.ui.theme.rememberLutistaBlurBackdrop
@@ -54,13 +54,13 @@ import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.basic.rememberTopAppBarState
 import top.yukonga.miuix.kmp.blur.layerBackdrop
+import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlaySpinnerPreference
 import top.yukonga.miuix.kmp.preference.SliderPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
-import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.overlay.OverlayDialog
+import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.window.WindowDialog
 import kotlin.math.roundToInt
 
@@ -355,7 +355,7 @@ private fun CacheCleanPreference(context: android.content.Context, settingsManag
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "清理所有的log和无用资源",
+                    text = "清理所有的Log和无用资源",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.SemiBold
                 )
