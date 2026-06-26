@@ -111,7 +111,7 @@ private enum class LchColor(val label: String, val color: Color) {
 // ── 曲线通道枚举 ────────────────────────────────────────────────────
 
 private enum class CurveChannel(val label: String, val color: Color) {
-    WHITE("W", Color.White),
+    WHITE("W", Color.Gray),
     RED("R", Color(0xFFE53935)),
     GREEN("G", Color(0xFF4CAF50)),
     BLUE("B", Color(0xFF2196F3))
