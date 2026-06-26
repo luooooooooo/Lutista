@@ -500,7 +500,7 @@ fun RecipeRoomScreen(
                         ) {
                             ListPopupColumn {
                                 val importItem = DropdownItem(
-                                    text = "导入",
+                                    text = "智能导入",
                                     icon = { modifier ->
                                         Icon(
                                             imageVector = MiuixIcons.Import,
