@@ -38,6 +38,7 @@ import cn.alittlecookie.lutista.ui.theme.rememberLutistaBlurBackdrop
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 import top.yukonga.miuix.kmp.basic.Button
+import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.DropdownItem
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
@@ -48,12 +49,12 @@ import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.basic.rememberTopAppBarState
 import top.yukonga.miuix.kmp.blur.layerBackdrop
-import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlaySpinnerPreference
 import top.yukonga.miuix.kmp.preference.SliderPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.utils.overScrollVertical
+import top.yukonga.miuix.kmp.window.WindowDialog
 import kotlin.math.roundToInt
 
 @Composable
@@ -123,7 +124,7 @@ fun SettingsScreen(
             .overScrollVertical(),
         contentPadding = PaddingValues(
             top = paddingValues.calculateTopPadding() + 12.dp,
-            bottom = 12.dp,
+            bottom = 92.dp,
             start = 12.dp,
             end = 12.dp
         ),
@@ -271,7 +272,7 @@ private fun FilenameTemplatePreference(settingsManager: SettingsManager) {
 
     ArrowPreference(
         title = "输出图片文件名",
-        summary = template,
+        summary = "当前格式：$template",
         onClick = {
             editText = template
             showDialog = true
@@ -279,12 +280,12 @@ private fun FilenameTemplatePreference(settingsManager: SettingsManager) {
     )
 
     if (showDialog) {
-        OverlayDialog(
+        WindowDialog(
             show = showDialog,
             onDismissRequest = { showDialog = false }
         ) {
             Column(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                modifier = Modifier.padding(horizontal = 0.dp, vertical = 0.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
@@ -292,9 +293,9 @@ private fun FilenameTemplatePreference(settingsManager: SettingsManager) {
                     fontSize = 18.sp,
                     fontWeight = FontWeight.SemiBold
                 )
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    text = "支持变量：<fname>/<filter>/<YYYYMMDD...>/<D+1>/<M+1>/<Y+1>",
+                    text = "支持变量：\n· <fname>：文件名\n· <filter>：滤镜名\n· <yyyyMMdd...>：日期格式（JAVA）\n· <D+1>/<M+1>/<Y+1>：日/月/年累加",
                     fontSize = 13.sp,
                     color = Color(0xFF888888)
                 )
@@ -307,6 +308,7 @@ private fun FilenameTemplatePreference(settingsManager: SettingsManager) {
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 Button(
+                    colors = ButtonDefaults.buttonColorsPrimary(),
                     onClick = {
                         scope.launch {
                             settingsManager.setOutputFilenameTemplate(editText)
