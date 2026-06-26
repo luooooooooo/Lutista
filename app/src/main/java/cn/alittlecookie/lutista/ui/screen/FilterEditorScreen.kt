@@ -1,5 +1,6 @@
 package cn.alittlecookie.lutista.ui.screen
 
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -54,6 +55,7 @@ import cn.alittlecookie.lutista.data.model.LchAdjustment
 import cn.alittlecookie.lutista.data.model.LchConfig
 import cn.alittlecookie.lutista.data.repository.FilterRepository
 import cn.alittlecookie.lutista.domain.engine.ImageProcessingEngine
+import cn.alittlecookie.lutista.domain.usecase.ExportFilterUseCase
 import cn.alittlecookie.lutista.manager.LogManager
 import cn.alittlecookie.lutista.ui.component.CurveEditorCanvas
 import coil.compose.AsyncImage
@@ -131,6 +133,7 @@ fun FilterEditorScreen(
     val logger: LogManager = koinInject()
     val scope = rememberCoroutineScope()
     val scrollBehavior = MiuixScrollBehavior(rememberTopAppBarState())
+    val exportFilterUseCase: ExportFilterUseCase = koinInject()
 
     // ViewModel
     val state = remember(filterId) {
@@ -162,6 +165,36 @@ fun FilterEditorScreen(
     var showMoreMenu by remember { mutableStateOf(false) }
     var renameDialogVisible by remember { mutableStateOf(false) }
     var renameDialogText by remember { mutableStateOf("") }
+
+    var pendingExportType by remember { mutableStateOf<ExportFilterUseCase.ExportType?>(null) }
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("*/*")
+    ) { uri ->
+        val type = pendingExportType ?: return@rememberLauncherForActivityResult
+        pendingExportType = null
+        if (uri != null) {
+            scope.launch {
+                when (type) {
+                    ExportFilterUseCase.ExportType.UNIFIED_LUT -> {
+                        when (val result = exportFilterUseCase.exportUnifiedLutTo(filterId, uri)) {
+                            is ExportFilterUseCase.ExportResult.Success ->
+                                Toast.makeText(context, "已导出统一LUT", Toast.LENGTH_SHORT).show()
+                            is ExportFilterUseCase.ExportResult.Error ->
+                                Toast.makeText(context, result.message, Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    ExportFilterUseCase.ExportType.FILTER_CONFIG -> {
+                        when (val result = exportFilterUseCase.exportFilterConfigTo(filterId, uri)) {
+                            is ExportFilterUseCase.ExportResult.Success ->
+                                Toast.makeText(context, "已导出滤镜配置", Toast.LENGTH_SHORT).show()
+                            is ExportFilterUseCase.ExportResult.Error ->
+                                Toast.makeText(context, result.message, Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
+        }
+    }
     var showResetDialog by remember { mutableStateOf(false) }
     var filterNameEditing by remember { mutableStateOf("") }
     var isEditingName by remember { mutableStateOf(false) }
@@ -260,7 +293,7 @@ fun FilterEditorScreen(
                             ListPopupColumn {
                                 DropdownImpl(
                                     text = "重命名",
-                                    optionSize = 2,
+                                    optionSize = 5,
                                     isSelected = false,
                                     index = 0,
                                     dropdownColors = DropdownDefaults.dropdownColors(),
@@ -271,10 +304,48 @@ fun FilterEditorScreen(
                                     }
                                 )
                                 DropdownImpl(
-                                    text = "恢复默认",
-                                    optionSize = 2,
+                                    text = "保存",
+                                    optionSize = 5,
                                     isSelected = false,
                                     index = 1,
+                                    dropdownColors = DropdownDefaults.dropdownColors(),
+                                    onSelectedIndexChange = {
+                                        showMoreMenu = false
+                                        scope.launch {
+                                            if (state.save()) Toast.makeText(context, "已保存", Toast.LENGTH_SHORT).show()
+                                            else Toast.makeText(context, "保存失败", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                )
+                                DropdownImpl(
+                                    text = "导出统一LUT",
+                                    optionSize = 5,
+                                    isSelected = false,
+                                    index = 2,
+                                    dropdownColors = DropdownDefaults.dropdownColors(),
+                                    onSelectedIndexChange = {
+                                        showMoreMenu = false
+                                        pendingExportType = ExportFilterUseCase.ExportType.UNIFIED_LUT
+                                        exportLauncher.launch("${state.filterName}_unified.cube")
+                                    }
+                                )
+                                DropdownImpl(
+                                    text = "导出滤镜配置",
+                                    optionSize = 5,
+                                    isSelected = false,
+                                    index = 3,
+                                    dropdownColors = DropdownDefaults.dropdownColors(),
+                                    onSelectedIndexChange = {
+                                        showMoreMenu = false
+                                        pendingExportType = ExportFilterUseCase.ExportType.FILTER_CONFIG
+                                        exportLauncher.launch("${state.filterName}_config.zip")
+                                    }
+                                )
+                                DropdownImpl(
+                                    text = "恢复默认",
+                                    optionSize = 5,
+                                    isSelected = false,
+                                    index = 4,
                                     dropdownColors = DropdownDefaults.dropdownColors(),
                                     onSelectedIndexChange = {
                                         showMoreMenu = false

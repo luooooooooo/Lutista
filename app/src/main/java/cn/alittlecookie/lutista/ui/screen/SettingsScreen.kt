@@ -403,15 +403,15 @@ private suspend fun cleanupCache(context: android.content.Context, watermarkRepo
         val usedFiles = mutableSetOf<String>()
         try {
             val all = watermarkRepository.getAllWatermarks().first()
+            val refPattern = Regex(""""(imageUri|fontUri)"\s*:\s*"([^"]+)"""")
             all.forEach { entity ->
-                val json = entity.configJson
-                Regex(""""imageUri"\s*:\s*"([^"]+)"""").findAll(json).forEach { m ->
-                    usedFiles.add(m.groupValues[1])
+                refPattern.findAll(entity.configJson).forEach { m ->
+                    usedFiles.add(m.groupValues[2].substringAfterLast('/'))
                 }
             }
         } catch (_: Exception) {}
         assetsDir.listFiles()?.forEach { file ->
-            if (file.isFile && file.name !in usedFiles.map { it.substringAfterLast('/') }) {
+            if (file.isFile && file.name !in usedFiles) {
                 file.delete()
             }
         }

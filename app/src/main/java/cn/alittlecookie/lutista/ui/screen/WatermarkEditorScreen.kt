@@ -74,6 +74,7 @@ import cn.alittlecookie.lutista.watermark.model.SizeMode
 import cn.alittlecookie.lutista.watermark.model.TextAlign
 import cn.alittlecookie.lutista.watermark.model.TextElement
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.koin.compose.koinInject
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
@@ -179,6 +180,16 @@ fun WatermarkEditorScreen(
         }
     }
 
+    val exportWatermarkLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                exportWatermarkZip(context, state, uri)
+            }
+        }
+    }
+
     Scaffold(
         topBar = {
             SmallTopAppBar(
@@ -216,14 +227,20 @@ fun WatermarkEditorScreen(
                             alignment = PopupPositionProvider.Align.End
                         ) {
                             ListPopupColumn {
-                                DropdownImpl("重命名", optionSize = 2, isSelected = false, index = 0,
+                                DropdownImpl("重命名", optionSize = 3, isSelected = false, index = 0,
                                     dropdownColors = DropdownDefaults.dropdownColors(),
                                     onSelectedIndexChange = {
                                         showMoreMenu = false
                                         renameText = state.watermarkName
                                         showRenameDialog = true
                                     })
-                                DropdownImpl("保存", optionSize = 2, isSelected = false, index = 1,
+                                DropdownImpl("导出边框水印", optionSize = 3, isSelected = false, index = 1,
+                                    dropdownColors = DropdownDefaults.dropdownColors(),
+                                    onSelectedIndexChange = {
+                                        showMoreMenu = false
+                                        exportWatermarkLauncher.launch("${state.watermarkName}.zip")
+                                    })
+                                DropdownImpl("保存", optionSize = 3, isSelected = false, index = 2,
                                     dropdownColors = DropdownDefaults.dropdownColors(),
                                     onSelectedIndexChange = {
                                         showMoreMenu = false
@@ -1314,5 +1331,53 @@ private fun SliderWithValue(
         }
         Slider(value = value, onValueChange = onValueChange, onValueChangeFinished = onValueChangeFinished,
             valueRange = valueRange, steps = steps)
+    }
+}
+
+private suspend fun exportWatermarkZip(
+    context: android.content.Context,
+    state: WatermarkEditorViewModel,
+    uri: android.net.Uri
+) = withContext(kotlinx.coroutines.Dispatchers.IO) {
+    try {
+        val scene = state.scene
+        val configJson = cn.alittlecookie.lutista.watermark.util.SceneSerializer.toJson(scene)
+        val wrapper = org.json.JSONObject().apply {
+            put("type", "watermark")
+            put("version", 1)
+            put("name", state.watermarkName)
+            put("config", org.json.JSONObject(configJson))
+        }
+
+        val refPattern = java.util.regex.Pattern.compile(""""(imageUri|fontUri)"\s*:\s*"([^"]+)"""")
+        val assetsDir = java.io.File(context.filesDir, "watermark_assets")
+        val referencedFiles = mutableListOf<java.io.File>()
+        val matcher = refPattern.matcher(configJson)
+        while (matcher.find()) {
+            val fileName = matcher.group(2)?.substringAfterLast('/') ?: continue
+            val file = java.io.File(assetsDir, fileName)
+            if (file.isFile) referencedFiles.add(file)
+        }
+
+        context.contentResolver.openOutputStream(uri)?.use { output ->
+            java.util.zip.ZipOutputStream(output).use { zos ->
+                zos.putNextEntry(java.util.zip.ZipEntry("watermark_config.json"))
+                zos.write(wrapper.toString(2).toByteArray())
+                zos.closeEntry()
+
+                for (file in referencedFiles) {
+                    zos.putNextEntry(java.util.zip.ZipEntry("assets/${file.name}"))
+                    file.inputStream().use { it.copyTo(zos) }
+                    zos.closeEntry()
+                }
+            }
+        }
+        withContext(kotlinx.coroutines.Dispatchers.Main) {
+            Toast.makeText(context, "边框水印已导出", Toast.LENGTH_SHORT).show()
+        }
+    } catch (e: Exception) {
+        withContext(kotlinx.coroutines.Dispatchers.Main) {
+            Toast.makeText(context, "导出失败: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
     }
 }

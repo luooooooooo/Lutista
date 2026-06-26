@@ -61,10 +61,12 @@ import cn.alittlecookie.lutista.ui.theme.rememberLutistaBlurBackdrop
 import cn.alittlecookie.lutista.watermark.model.BaseImageElement
 import cn.alittlecookie.lutista.watermark.model.Scene
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import org.koin.compose.koinInject
 import sh.calvin.reorderable.ReorderableItem
@@ -119,6 +121,7 @@ enum class MoreAction {
     COPY,
     EXPORT_LUT,
     EXPORT_CONFIG,
+    EXPORT_WATERMARK,
     DELETE
 }
 
@@ -232,18 +235,12 @@ fun RecipeRoomScreen(
     val importPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
-        uri?.let { handleImport(it, context, scope, importLutUseCase, filterRepository, logger) }
+        uri?.let { handleImport(it, context, scope, importLutUseCase, filterRepository, watermarkRepository, logger) }
     }
 
     LaunchedEffect(internalImportTrigger) {
         if (internalImportTrigger > 0) {
-            if (selectedSubTab == 1) {
-                // Watermark tab: create new watermark
-                val newId = watermarkRepository.createDefault()
-                onEditWatermark(newId)
-            } else {
-                importPicker.launch(arrayOf("*/*"))
-            }
+            importPicker.launch(arrayOf("*/*"))
         }
     }
 
@@ -275,7 +272,7 @@ fun RecipeRoomScreen(
     }
 
     // SAF export state
-    data class PendingExport(val filterId: Long, val type: ExportFilterUseCase.ExportType)
+    data class PendingExport(val filterId: Long, val type: ExportFilterUseCase.ExportType?)
     var pendingExport by remember { mutableStateOf<PendingExport?>(null) }
 
     val exportLutLauncher = rememberLauncherForActivityResult(
@@ -313,6 +310,18 @@ fun RecipeRoomScreen(
                         Toast.makeText(context, result.message, Toast.LENGTH_SHORT).show()
                     }
                 }
+            }
+        }
+    }
+
+    val exportWatermarkLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri ->
+        val pending = pendingExport ?: return@rememberLauncherForActivityResult
+        pendingExport = null
+        if (uri != null) {
+            scope.launch {
+                exportWatermarkFromRecipe(context, pending.filterId, watermarkRepository, uri)
             }
         }
     }
@@ -410,7 +419,7 @@ fun RecipeRoomScreen(
                                                 createdAt = System.currentTimeMillis(),
                                                 updatedAt = System.currentTimeMillis()
                                             )
-                                            filterRepository.insert(newEntity)
+                                             filterRepository.insert(newEntity)
                                         }
                                     }
                                 }
@@ -423,6 +432,10 @@ fun RecipeRoomScreen(
                         MoreAction.EXPORT_CONFIG -> {
                             pendingExport = PendingExport(item.id, ExportFilterUseCase.ExportType.FILTER_CONFIG)
                             exportConfigLauncher.launch("${item.name}_config.zip")
+                        }
+                        MoreAction.EXPORT_WATERMARK -> {
+                            pendingExport = PendingExport(item.id, null)
+                            exportWatermarkLauncher.launch("${item.name}.zip")
                         }
                         MoreAction.DELETE -> {
                             if (!item.isBuiltIn) {
@@ -554,6 +567,7 @@ private fun handleImport(
     scope: CoroutineScope,
     importLutUseCase: ImportLutUseCase,
     filterRepository: FilterRepository,
+    watermarkRepository: WatermarkRepository,
     logger: LogManager
 ) {
     val fileName = uri.lastPathSegment ?: "unknown"
@@ -580,6 +594,7 @@ private fun handleImport(
                     val zis = ZipInputStream(content)
                     var hasCubeOrVlt = false
                     var hasConfigJson = false
+                    var isWatermark = false
                     var configName: String? = null
                     var entry = zis.nextEntry
                     while (entry != null) {
@@ -592,7 +607,8 @@ private fun handleImport(
                             try {
                                 val bytes = zis.readBytes()
                                 val json = JSONObject(String(bytes))
-                                configName = json.optString("name", null)
+                                configName = json.optString("name", "")
+                                if ("watermark" == json.optString("type")) isWatermark = true
                             } catch (_: Exception) {}
                         }
                         zis.closeEntry()
@@ -601,12 +617,13 @@ private fun handleImport(
                     zis.close()
                     content.close()
 
-                    if (hasCubeOrVlt && hasConfigJson) {
+                    if (isWatermark) {
+                        importWatermarkPackage(context, uri, watermarkRepository, logger)
+                    } else if (hasCubeOrVlt && hasConfigJson) {
                         // Filter package
                         importFilterPackage(context, uri, filterRepository, logger)
                     } else {
-                        // Placeholder: watermark package
-                        Toast.makeText(context, "边框水印导入暂未实现", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "无法识别的压缩包格式", Toast.LENGTH_SHORT).show()
                     }
                 } catch (e: Exception) {
                     logger.e("Import", "导入压缩包失败", e)
@@ -702,6 +719,118 @@ private suspend fun importFilterPackage(
     } catch (e: Exception) {
         logger.e("Import", "导入滤镜包失败", e)
         Toast.makeText(context, "导入失败: ${e.message}", Toast.LENGTH_SHORT).show()
+    }
+}
+
+private suspend fun exportWatermarkFromRecipe(
+    context: Context,
+    watermarkId: Long,
+    watermarkRepository: WatermarkRepository,
+    uri: Uri
+) = withContext(Dispatchers.IO) {
+    try {
+        val scene = watermarkRepository.getSceneById(watermarkId)
+            ?: throw IllegalStateException("水印不存在")
+        val entity = watermarkRepository.getWatermarkById(watermarkId)
+        val configJson = cn.alittlecookie.lutista.watermark.util.SceneSerializer.toJson(scene)
+        val wrapper = JSONObject().apply {
+            put("type", "watermark")
+            put("version", 1)
+            put("name", entity?.name ?: "边框水印")
+            put("config", JSONObject(configJson))
+        }
+
+        val refPattern = java.util.regex.Pattern.compile(""""(imageUri|fontUri)"\s*:\s*"([^"]+)"""")
+        val assetsDir = File(context.filesDir, "watermark_assets")
+        val referencedFiles = mutableListOf<File>()
+        val matcher = refPattern.matcher(configJson)
+        while (matcher.find()) {
+            val fileName = matcher.group(2)?.substringAfterLast('/') ?: continue
+            val file = File(assetsDir, fileName)
+            if (file.isFile) referencedFiles.add(file)
+        }
+
+        context.contentResolver.openOutputStream(uri)?.use { output ->
+            java.util.zip.ZipOutputStream(output).use { zos ->
+                zos.putNextEntry(java.util.zip.ZipEntry("watermark_config.json"))
+                zos.write(wrapper.toString(2).toByteArray())
+                zos.closeEntry()
+
+                for (file in referencedFiles) {
+                    zos.putNextEntry(java.util.zip.ZipEntry("assets/${file.name}"))
+                    file.inputStream().use { it.copyTo(zos) }
+                    zos.closeEntry()
+                }
+            }
+        }
+        withContext(Dispatchers.Main) {
+            Toast.makeText(context, "边框水印已导出", Toast.LENGTH_SHORT).show()
+        }
+    } catch (e: Exception) {
+        withContext(Dispatchers.Main) {
+            Toast.makeText(context, "导出失败: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+}
+
+private suspend fun importWatermarkPackage(
+    context: Context,
+    uri: Uri,
+    watermarkRepository: WatermarkRepository,
+    logger: LogManager
+) {
+    try {
+        val content = context.contentResolver.openInputStream(uri) ?: return
+        val zis = ZipInputStream(content)
+        val assetsDir = File(context.filesDir, "watermark_assets")
+        assetsDir.mkdirs()
+
+        var watermarkName = "导入边框水印"
+        var configJsonString: String? = null
+
+        var entry = zis.nextEntry
+        while (entry != null) {
+            val rawName = entry.name.substringAfterLast('/')
+            if (rawName.isEmpty()) { zis.closeEntry(); entry = zis.nextEntry; continue }
+            val bytes = zis.readBytes()
+
+            if (rawName == "watermark_config.json") {
+                try {
+                    val wrapper = JSONObject(String(bytes))
+                    watermarkName = wrapper.optString("name", watermarkName)
+                    configJsonString = wrapper.getJSONObject("config").toString()
+                } catch (_: Exception) {}
+            } else if (rawName.isNotEmpty() && !rawName.endsWith(".json")) {
+                val destFile = File(assetsDir, rawName)
+                FileOutputStream(destFile).use { it.write(bytes) }
+            }
+            zis.closeEntry()
+            entry = zis.nextEntry
+        }
+        zis.close()
+        content.close()
+
+        if (configJsonString == null) {
+            withContext(Dispatchers.Main) {
+                Toast.makeText(context, "压缩包中未找到水印配置", Toast.LENGTH_SHORT).show()
+            }
+            return
+        }
+
+        val entity = WatermarkEntity(
+            name = watermarkName,
+            configJson = configJsonString
+        )
+        watermarkRepository.insert(entity)
+        withContext(Dispatchers.Main) {
+            Toast.makeText(context, "已导入边框水印: $watermarkName", Toast.LENGTH_SHORT).show()
+        }
+        logger.i("Import", "边框水印导入成功: $watermarkName")
+    } catch (e: Exception) {
+        logger.e("Import", "导入边框水印失败", e)
+        withContext(Dispatchers.Main) {
+            Toast.makeText(context, "导入失败: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
     }
 }
 
@@ -865,7 +994,9 @@ private fun RecipeListItem(
                             add(if (item.isEnabled) "禁用" else "启用")
                             if (!item.isBuiltIn || item.type == RecipeTab.WATERMARK) add("重命名")
                             add("拷贝")
-                            if (!isWatermarkTab) {
+                            if (isWatermarkTab) {
+                                add("导出边框水印")
+                            } else {
                                 add("导出统一LUT")
                                 add("导出滤镜配置")
                             }
@@ -894,6 +1025,7 @@ private fun RecipeListItem(
                                         "拷贝" -> onMoreAction(MoreAction.COPY)
                                         "导出统一LUT" -> onMoreAction(MoreAction.EXPORT_LUT)
                                         "导出滤镜配置" -> onMoreAction(MoreAction.EXPORT_CONFIG)
+                                        "导出边框水印" -> onMoreAction(MoreAction.EXPORT_WATERMARK)
                                         "删除" -> onMoreAction(MoreAction.DELETE)
                                     }
                                 }
