@@ -384,7 +384,7 @@ class FileMonitorService : LifecycleService(), KoinComponent {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("实时处理已启动")
             .setContentText("已处理 $count 张图片")
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_lutista)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .build()
