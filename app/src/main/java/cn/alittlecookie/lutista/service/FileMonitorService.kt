@@ -89,6 +89,7 @@ class FileMonitorService : LifecycleService(), KoinComponent {
     }
 
     override fun onBind(intent: Intent): IBinder {
+        super.onBind(intent)
         return binder
     }
 
