@@ -419,10 +419,19 @@ fun PhotoProcessScreen(
                                 else -> settingsManager.jpgQuality.first()
                             }
                             val ext = when (outFormat) {
-                                OutputFormat.PNG -> ".png"
-                                else -> ".jpg"
+                                OutputFormat.PNG -> "png"
+                                else -> "jpg"
                             }
-                            val displayName = "Lutista_${System.currentTimeMillis()}_${photoIdx + 1}$ext"
+                            val template = settingsManager.outputFilenameTemplate.first()
+                            val srcName = extractOriginalBasename(context, Uri.parse(photo.uri))
+                            val filterName = filtersFromDb.find { it.id == effectiveSettings.filterId }?.name ?: ""
+                            val daily = settingsManager.getDailyCounter()
+                            val monthly = settingsManager.getMonthlyCounter()
+                            val yearly = settingsManager.getYearlyCounter()
+                            val baseName = cn.alittlecookie.lutista.util.FilenameExpander.expand(
+                                template, srcName, filterName, daily, monthly, yearly
+                            )
+                            val displayName = "$baseName.$ext"
                             val outUri = saveBitmapToGallery(context, resultBitmap, displayName, cachedExif, outFormat, outQuality)
                             resultBitmap.recycle()
                         }
@@ -1258,3 +1267,46 @@ data class ProcessResult(
     val filterCount: Int,
     val watermarkCount: Int
 )
+
+private fun extractOriginalBasename(context: Context, uri: Uri): String {
+    // Try full projection first with column name matching
+    try {
+        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            val names = cursor.columnNames
+            val dispIdx = names.indexOfFirst {
+                it.equals("_display_name", ignoreCase = true) ||
+                it.equals("display_name", ignoreCase = true)
+            }
+            if (dispIdx >= 0 && cursor.moveToFirst()) {
+                val name = cursor.getString(dispIdx)
+                if (!name.isNullOrEmpty()) return name.substringBeforeLast('.')
+            }
+            // Fallback: pick first column that looks like a filename
+            if (cursor.moveToFirst()) {
+                for (i in names.indices) {
+                    val v = cursor.getString(i) ?: continue
+                    if (v.contains('.') && v.length in 5..200) return v.substringBeforeLast('.')
+                }
+            }
+        }
+    } catch (_: Exception) {}
+
+    // Fallback: extract ID and query MediaStore directly
+    val m = Regex("""(\d+)""").find(uri.lastPathSegment ?: "")
+    if (m != null) {
+        try {
+            val mediaUri = Uri.withAppendedPath(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI, m.value
+            )
+            context.contentResolver.query(mediaUri, null, null, null, null)?.use { cursor ->
+                val idx = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                if (idx >= 0 && cursor.moveToFirst()) {
+                    val name = cursor.getString(idx)
+                    if (!name.isNullOrEmpty()) return name.substringBeforeLast('.')
+                }
+            }
+        } catch (_: Exception) {}
+    }
+
+    return "unknown"
+}

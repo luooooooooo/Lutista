@@ -3,9 +3,13 @@ package cn.alittlecookie.lutista.ui.screen
 import android.content.Intent
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -15,10 +19,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import cn.alittlecookie.lutista.manager.LogManager
 import cn.alittlecookie.lutista.manager.LutPrecision
@@ -29,14 +37,18 @@ import cn.alittlecookie.lutista.ui.theme.lutistaBlurEffect
 import cn.alittlecookie.lutista.ui.theme.rememberLutistaBlurBackdrop
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
+import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.DropdownItem
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTitle
+import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.basic.rememberTopAppBarState
 import top.yukonga.miuix.kmp.blur.layerBackdrop
+import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlaySpinnerPreference
 import top.yukonga.miuix.kmp.preference.SliderPreference
@@ -182,6 +194,8 @@ fun SettingsScreen(
                         }
                     }
                 )
+
+                FilenameTemplatePreference(settingsManager)
             }
         }
 
@@ -241,5 +255,69 @@ fun SettingsScreen(
             }
         }
     }
+    }
+}
+
+@Composable
+private fun FilenameTemplatePreference(settingsManager: SettingsManager) {
+    val scope = rememberCoroutineScope()
+    var showDialog by remember { mutableStateOf(false) }
+    var template by remember { mutableStateOf(settingsManager.getOutputFilenameTemplateSync()) }
+    var editText by remember { mutableStateOf(template) }
+
+    LaunchedEffect(Unit) {
+        settingsManager.outputFilenameTemplate.collect { template = it }
+    }
+
+    ArrowPreference(
+        title = "输出图片文件名",
+        summary = template,
+        onClick = {
+            editText = template
+            showDialog = true
+        }
+    )
+
+    if (showDialog) {
+        OverlayDialog(
+            show = showDialog,
+            onDismissRequest = { showDialog = false }
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "输出图片文件名",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "支持变量：<fname>/<filter>/<YYYYMMDD...>/<D+1>/<M+1>/<Y+1>",
+                    fontSize = 13.sp,
+                    color = Color(0xFF888888)
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                TextField(
+                    value = editText,
+                    onValueChange = { editText = it },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(
+                    onClick = {
+                        scope.launch {
+                            settingsManager.setOutputFilenameTemplate(editText)
+                        }
+                        showDialog = false
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("确定", color = Color.White)
+                }
+            }
+        }
     }
 }

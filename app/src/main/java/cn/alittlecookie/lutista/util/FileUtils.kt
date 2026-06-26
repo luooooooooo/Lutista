@@ -62,12 +62,21 @@ class FileUtils(
 
     fun generateOutputPath(sourcePath: String, outputDir: File? = null): String {
         val dir = outputDir ?: getDefaultOutputDir()
-        val name = requireNotNull(sourcePath.substringBeforeLast('/')
-            .substringBeforeLast('\\')
-            .substringAfterLast('/')
-            .substringAfterLast('\\')
-            .substringBeforeLast('.')) { "Invalid sourcePath: $sourcePath" }
-        return File(dir, "${name}_processed_${System.currentTimeMillis()}.jpg").absolutePath
+        val baseName = extractBaseName(sourcePath)
+        return buildOutputPath(dir, "$baseName-${System.currentTimeMillis()}.jpg")
+    }
+
+    fun buildOutputPath(dir: File, fileName: String): String {
+        return File(dir, fileName).absolutePath
+    }
+
+    companion object {
+        fun extractBaseName(path: String): String {
+            val lastSegment = path
+                .substringAfterLast('/')
+                .substringAfterLast('\\')
+            return lastSegment.substringBeforeLast('.').ifEmpty { lastSegment }
+        }
     }
 
     fun deleteFile(path: String): Boolean {

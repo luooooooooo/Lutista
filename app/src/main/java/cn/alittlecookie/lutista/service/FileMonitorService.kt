@@ -75,7 +75,7 @@ class FileMonitorService : LifecycleService(), KoinComponent {
                 scannedFiles.clear()
                 skippedFiles.clear()
                 if (onlyNewFiles) {
-                    markExistingFilesAsSeen()
+                    lifecycleScope.launch(Dispatchers.IO) { markExistingFilesAsSeen() }
                 }
                 CoroutineScope(Dispatchers.IO).launch { settingsManager.resetProcessedCount() }
                 startForeground(NOTIFICATION_ID, createNotification(0))
@@ -167,7 +167,10 @@ class FileMonitorService : LifecycleService(), KoinComponent {
                 val images = mediaStoreScanner.queryNewImages(folderPath, lastMediaStoreTimestamp)
 
                 for (image in images) {
-                    results.add(image.uri.toString())
+                    val localPath = copyMediaStoreToCache(image.uri, image.displayName)
+                    if (localPath != null) {
+                        results.add(localPath)
+                    }
                     if (image.dateAdded > lastMediaStoreTimestamp) {
                         lastMediaStoreTimestamp = image.dateAdded
                     }
@@ -199,7 +202,8 @@ class FileMonitorService : LifecycleService(), KoinComponent {
             try {
                 val docDir = DocumentFile.fromTreeUri(this, monitorPath.toUri())
                 docDir?.listFiles()?.forEach { child ->
-                    if (child.isFile && child.name != null && isImageFile(child.name!!)) {
+                    val name = child.name ?: return@forEach
+                    if (isImageFile(name)) {
                         scannedFiles.add(child.uri.toString())
                         count++
                     }
@@ -311,6 +315,32 @@ class FileMonitorService : LifecycleService(), KoinComponent {
             logger.e(TAG, "SAF文件夹扫描失败", e)
         }
         return results
+    }
+
+    /**
+     * Copy a MediaStore content URI to a local cache file, preserving the original display name.
+     */
+    private fun copyMediaStoreToCache(uri: Uri, displayName: String): String? {
+        return try {
+            val baseName = displayName.substringBeforeLast('.')
+            val ext = displayName.substringAfterLast('.', "")
+            var cacheFile = File(cacheDir, displayName)
+            var counter = 1
+            while (cacheFile.exists()) {
+                cacheFile = File(cacheDir, "${baseName}_$counter.$ext")
+                counter++
+            }
+            contentResolver.openInputStream(uri)?.use { input ->
+                cacheFile.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            }
+            logger.d(TAG, "MediaStore文件已复制到缓存: $displayName → ${cacheFile.absolutePath}")
+            cacheFile.absolutePath
+        } catch (e: Exception) {
+            logger.e(TAG, "复制MediaStore文件到缓存失败: $displayName ($uri)", e)
+            null
+        }
     }
 
     /**

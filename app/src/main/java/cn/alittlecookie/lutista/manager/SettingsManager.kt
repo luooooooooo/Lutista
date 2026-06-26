@@ -282,7 +282,67 @@ class SettingsManager(
         dataStore.data.first()[COLOR_SPEC_KEY] ?: "Spec2025"
     }
 
+    // 输出文件名模板
+    val outputFilenameTemplate: Flow<String> = dataStore.data.map { prefs ->
+        prefs[OUTPUT_FILENAME_TEMPLATE_KEY] ?: DEFAULT_TEMPLATE
+    }
+
+    suspend fun setOutputFilenameTemplate(template: String) {
+        dataStore.edit { prefs -> prefs[OUTPUT_FILENAME_TEMPLATE_KEY] = template }
+    }
+
+    fun getOutputFilenameTemplateSync(): String = runBlocking {
+        dataStore.data.first()[OUTPUT_FILENAME_TEMPLATE_KEY] ?: DEFAULT_TEMPLATE
+    }
+
+    // 自增计数器 (D+1/M+1/Y+1)
+    private suspend fun getAndIncrementCounter(
+        counterKey: Preferences.Key<String>,
+        dateKey: Preferences.Key<String>,
+        currentPeriod: String
+    ): Int {
+        var result = 1
+        dataStore.edit { prefs ->
+            val lastPeriod = prefs[dateKey] ?: ""
+            val lastValue = prefs[counterKey]?.split(":")?.firstOrNull()?.toIntOrNull() ?: 0
+            if (lastPeriod == currentPeriod) {
+                result = lastValue + 1
+            }
+            prefs[dateKey] = currentPeriod
+            prefs[counterKey] = "$result:${System.currentTimeMillis()}"
+        }
+        return result
+    }
+
+    val dailyCounter: Flow<Int> = dataStore.data.map {
+        it[COUNTER_DAILY_KEY]?.split(":")?.firstOrNull()?.toIntOrNull() ?: 0
+    }
+
+    val monthlyCounter: Flow<Int> = dataStore.data.map {
+        it[COUNTER_MONTHLY_KEY]?.split(":")?.firstOrNull()?.toIntOrNull() ?: 0
+    }
+
+    val yearlyCounter: Flow<Int> = dataStore.data.map {
+        it[COUNTER_YEARLY_KEY]?.split(":")?.firstOrNull()?.toIntOrNull() ?: 0
+    }
+
+    suspend fun getDailyCounter(): Int {
+        return getAndIncrementCounter(COUNTER_DAILY_KEY, COUNTER_DAILY_LAST_KEY,
+            java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US).format(java.util.Date()))
+    }
+
+    suspend fun getMonthlyCounter(): Int {
+        return getAndIncrementCounter(COUNTER_MONTHLY_KEY, COUNTER_MONTHLY_LAST_KEY,
+            java.text.SimpleDateFormat("yyyyMM", java.util.Locale.US).format(java.util.Date()))
+    }
+
+    suspend fun getYearlyCounter(): Int {
+        return getAndIncrementCounter(COUNTER_YEARLY_KEY, COUNTER_YEARLY_LAST_KEY,
+            java.text.SimpleDateFormat("yyyy", java.util.Locale.US).format(java.util.Date()))
+    }
+
     companion object {
+        private val DEFAULT_TEMPLATE = "<fname>-<filter>"
         private val USE_BLUR_KEY = booleanPreferencesKey("use_blur")
         private val USE_MONET_KEY = booleanPreferencesKey("use_monet")
         private val USE_DYNAMIC_COLOR_KEY = booleanPreferencesKey("use_dynamic_color")
@@ -303,6 +363,13 @@ class SettingsManager(
         private val MONITOR_RUNNING_KEY = booleanPreferencesKey("monitor_running")
         private val ONLY_NEW_FILES_KEY = booleanPreferencesKey("only_new_files")
         private val PROCESSED_COUNT_KEY = intPreferencesKey("processed_count")
+        private val OUTPUT_FILENAME_TEMPLATE_KEY = stringPreferencesKey("output_filename_template")
+        private val COUNTER_DAILY_KEY = stringPreferencesKey("counter_daily")
+        private val COUNTER_DAILY_LAST_KEY = stringPreferencesKey("counter_daily_last")
+        private val COUNTER_MONTHLY_KEY = stringPreferencesKey("counter_monthly")
+        private val COUNTER_MONTHLY_LAST_KEY = stringPreferencesKey("counter_monthly_last")
+        private val COUNTER_YEARLY_KEY = stringPreferencesKey("counter_yearly")
+        private val COUNTER_YEARLY_LAST_KEY = stringPreferencesKey("counter_yearly_last")
     }
 }
 

@@ -14,6 +14,7 @@ import cn.alittlecookie.lutista.manager.SettingsManager
 import cn.alittlecookie.lutista.util.ExifResolution
 import cn.alittlecookie.lutista.util.ExifUtils
 import cn.alittlecookie.lutista.util.FileUtils
+import cn.alittlecookie.lutista.util.FilenameExpander
 import cn.alittlecookie.lutista.util.FilterConfigJson.toConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -104,7 +105,7 @@ class ImageProcessingService(
                 else -> Bitmap.CompressFormat.JPEG
             }
 
-            val outputPath = resolveOutputPath(task, ext)
+            val outputPath = resolveOutputPath(task, ext, filterConfig?.name)
             saveBitmapWithExif(outputBitmap, outputPath, format, quality, exifResolution)
 
             onProgress(1.0f)
@@ -142,39 +143,40 @@ class ImageProcessingService(
         return watermarkRepository.getSceneById(watermarkId)
     }
 
-    private suspend fun resolveOutputPath(task: TaskEntity, ext: String): String {
+    private suspend fun resolveOutputPath(task: TaskEntity, ext: String, filterName: String?): String {
         if (task.outputPath.isNotEmpty()) return task.outputPath
 
+        val name = generateOutputFileName(task.sourcePath, ext, filterName)
         val customPath = settingsManager.outputPath.first()
         if (customPath.isEmpty()) {
             val dir = fileUtils.getDefaultOutputDir()
-            return fileUtils.generateOutputPath(task.sourcePath, dir)
+            return fileUtils.buildOutputPath(dir, name)
         }
 
         if (customPath.startsWith("content://")) {
             val baseUri = Uri.parse(customPath)
-            val name = generateOutputFileName(task.sourcePath, ext)
             val fileUri = fileUtils.createOutputFileInSafDir(baseUri, name, "image/$ext")
-                ?: return fallbackToDefaultOutput(task.sourcePath, ext)
+                ?: return fallbackToDefaultFile(name)
             return fileUri.toString()
         }
 
         val dir = fileUtils.getOutputDir(customPath)
-        return fileUtils.generateOutputPath(task.sourcePath, dir)
+        return fileUtils.buildOutputPath(dir, name)
     }
 
-    private fun fallbackToDefaultOutput(sourcePath: String, ext: String): String {
+    private fun fallbackToDefaultFile(name: String): String {
         val dir = fileUtils.getDefaultOutputDir()
-        return fileUtils.generateOutputPath(sourcePath, dir)
+        return fileUtils.buildOutputPath(dir, name)
     }
 
-    private fun generateOutputFileName(sourcePath: String, ext: String): String {
-        val name = sourcePath.substringBeforeLast('/')
-            .substringBeforeLast('\\')
-            .substringAfterLast('/')
-            .substringAfterLast('\\')
-            .substringBeforeLast('.')
-        return "${name}_processed_${System.currentTimeMillis()}.$ext"
+    private suspend fun generateOutputFileName(sourcePath: String, ext: String, filterName: String?): String {
+        val fname = FileUtils.extractBaseName(sourcePath)
+        val filter = filterName ?: ""
+        val template = settingsManager.outputFilenameTemplate.first()
+        val daily = settingsManager.getDailyCounter()
+        val monthly = settingsManager.getMonthlyCounter()
+        val yearly = settingsManager.getYearlyCounter()
+        return "${FilenameExpander.expand(template, fname, filter, daily, monthly, yearly)}.$ext"
     }
 
     private fun saveBitmapWithExif(bitmap: Bitmap, outputPath: String, format: Bitmap.CompressFormat, quality: Int, exifResolution: ExifResolution?) {
