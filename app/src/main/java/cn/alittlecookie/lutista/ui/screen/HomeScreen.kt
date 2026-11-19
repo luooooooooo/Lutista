@@ -40,6 +40,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import cn.alittlecookie.lutista.data.model.isPhotoBackup
 import cn.alittlecookie.lutista.data.repository.FilterRepository
 import cn.alittlecookie.lutista.data.repository.WatermarkRepository
 import cn.alittlecookie.lutista.manager.SettingsManager
@@ -122,10 +123,15 @@ fun HomeScreen(
         settingsManager.globalWatermarkId.collect { globalWatermarkId = it }
     }
 
-    val filterOptions = remember(filtersFromDb) {
+    // 单图备份只在对应的那张照片里用，不进"滤镜选择"下拉，避免把常用配方挤下去
+    val selectableFilters = remember(filtersFromDb) {
+        filtersFromDb.filterNot { it.isPhotoBackup }
+    }
+
+    val filterOptions = remember(selectableFilters) {
         buildList {
             add(DropdownItem(text = "无滤镜"))
-            addAll(filtersFromDb.map { filter ->
+            addAll(selectableFilters.map { filter ->
                 DropdownItem(text = filter.name)
             })
         }
@@ -138,9 +144,9 @@ fun HomeScreen(
         }
     }
 
-    LaunchedEffect(filtersFromDb, globalFilterId) {
+    LaunchedEffect(selectableFilters, globalFilterId) {
         if (globalFilterId > 0L) {
-            val idx = filtersFromDb.indexOfFirst { it.id == globalFilterId }
+            val idx = selectableFilters.indexOfFirst { it.id == globalFilterId }
             if (idx >= 0) selectedFilterIndex = idx + 1
         }
     }
@@ -304,7 +310,7 @@ fun HomeScreen(
                         if (idx == 0) {
                             settingsManager.setGlobalFilterId(0L)
                         } else {
-                            val filter = filtersFromDb.getOrNull(idx - 1)
+                            val filter = selectableFilters.getOrNull(idx - 1)
                             if (filter != null) settingsManager.setGlobalFilterId(filter.id)
                         }
                     }

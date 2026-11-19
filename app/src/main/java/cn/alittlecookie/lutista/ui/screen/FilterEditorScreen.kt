@@ -128,7 +128,9 @@ fun FilterEditorScreen(
     filterId: Long,
     onBackClick: () -> Unit,
     /** 指定预览图（单图精修时传入当前照片）；为空则用内置预览图 */
-    previewImageUri: String? = null
+    previewImageUri: String? = null,
+    /** 保存成功回调：单图精修用它判断这份备份是不是"真的改过"，没改过就在退出时删掉 */
+    onSaved: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val filterRepository: FilterRepository = koinInject()
@@ -317,8 +319,10 @@ fun FilterEditorScreen(
                                     onSelectedIndexChange = {
                                         showMoreMenu = false
                                         scope.launch {
-                                            if (state.save()) Toast.makeText(context, "已保存", Toast.LENGTH_SHORT).show()
-                                            else Toast.makeText(context, "保存失败", Toast.LENGTH_SHORT).show()
+                                            if (state.save()) {
+                                                onSaved()
+                                                Toast.makeText(context, "已保存", Toast.LENGTH_SHORT).show()
+                                            } else Toast.makeText(context, "保存失败", Toast.LENGTH_SHORT).show()
                                         }
                                     }
                                 )
@@ -504,7 +508,8 @@ fun FilterEditorScreen(
                     Button(onClick = {
                         showBackDialog = false
                         scope.launch {
-                            if (state.save()) onBackClick()
+                            if (state.save()) onSaved()
+                            onBackClick()
                         }
                     }, modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.buttonColors(color = MiuixTheme.colorScheme.primary)) {

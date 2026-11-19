@@ -6,6 +6,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -187,6 +188,7 @@ fun FilterGridOverlay(
     loadingIds: Map<Long, Boolean>,
     original: Bitmap?,
     onSelect: (Long) -> Unit,
+    onLongSelect: (Long) -> Unit = onSelect,
     onVisibleIdsChanged: (List<Long>) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -256,7 +258,8 @@ fun FilterGridOverlay(
                     thumbnails = thumbnails,
                     loadingIds = loadingIds,
                     original = original,
-                    onSelect = onSelect
+                    onSelect = onSelect,
+                    onLongSelect = onLongSelect
                 )
             }
         }
@@ -342,7 +345,8 @@ private fun FilterGridPage(
     thumbnails: Map<Long, Bitmap>,
     loadingIds: Map<Long, Boolean>,
     original: Bitmap?,
-    onSelect: (Long) -> Unit
+    onSelect: (Long) -> Unit,
+    onLongSelect: (Long) -> Unit
 ) {
     val rows = metrics.rows
     val columns = metrics.columns
@@ -376,7 +380,8 @@ private fun FilterGridPage(
                                 isSelected = item.id == selectedId,
                                 bitmap = if (item.id == 0L) original else thumbnails[item.id],
                                 isLoading = loadingIds[item.id] == true,
-                                onClick = { onSelect(item.id) }
+                                onClick = { onSelect(item.id) },
+                                onLongClick = { onLongSelect(item.id) }
                             )
                         }
                     }
@@ -396,12 +401,13 @@ private fun FilterGridCell(
     isSelected: Boolean,
     bitmap: Bitmap?,
     isLoading: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onLongClick: () -> Unit
 ) {
     Column(
         modifier = Modifier
             .width(labelWidth)
-            .clickable(onClick = onClick),
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
@@ -526,6 +532,12 @@ private fun FilterGridBottomBar(currentPage: Int, pageCount: Int, perPage: Int) 
             text = "${currentPage + 1} / $pageCount · 每页 $perPage 个",
             fontSize = 11.sp,
             color = MiuixTheme.colorScheme.onSurfaceVariantSummary
+        )
+        Spacer(Modifier.height(2.dp))
+        Text(
+            text = "轻点套用 · 长按套用并精调",
+            fontSize = 11.sp,
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.7f)
         )
     }
 }

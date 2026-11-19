@@ -16,6 +16,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
@@ -73,6 +74,8 @@ import cn.alittlecookie.lutista.domain.engine.ImageProcessingEngine
 import cn.alittlecookie.lutista.manager.LogManager
 import cn.alittlecookie.lutista.manager.OutputFormat
 import cn.alittlecookie.lutista.manager.SettingsManager
+import cn.alittlecookie.lutista.data.model.PHOTO_BACKUP_SUFFIX
+import cn.alittlecookie.lutista.data.model.isPhotoBackup
 import cn.alittlecookie.lutista.ui.preview.FilterThumbnailStore
 import cn.alittlecookie.lutista.util.ExifResolution
 import cn.alittlecookie.lutista.util.ExifUtils
@@ -171,6 +174,9 @@ fun PhotoProcessScreen(
     // 同一张照片 + 同一个滤镜只备份一次，反复点不会堆一堆备份
     var editingRecipeId by remember { mutableStateOf<Long?>(null) }
     val photoRecipeBackups = remember { mutableStateMapOf<String, Long>() }
+    // 本次会话里新建的备份（备份id → 原滤镜id），退出时没保存过就整份删掉，不留垃圾配方
+    val sessionBackups = remember { mutableStateMapOf<Long, Long>() }
+    var backupSaved by remember { mutableStateOf(false) }
 
     // Watermark scene cache: map watermarkId (String) -> Scene
     val watermarkSceneCache = remember { mutableMapOf<String, Scene?>() }
@@ -226,7 +232,7 @@ fun PhotoProcessScreen(
     val filtersFromDb by filterRepository.getEnabledFilters().collectAsState(initial = emptyList())
 
     /**
-     * 点击滤镜 → 应用 + 打开配方室精修。
+     * 打开配方室精修（长按滤镜 / 点预览「精调参数」才会走到这里）。
      * 打开前先整份复制该配方（LUT/双 LUT/浓度/曲线/HSL/暗角/颗粒全部字段），
      * 之后的调整只改这份副本，原配方和实时监听用的默认配方不受影响。
      */
@@ -236,19 +242,27 @@ fun PhotoProcessScreen(
             return
         }
         val photoUri = photos[selectedPhotoIndex].uri
+        // 当前选的已经是备份（比如刚精修过再点「精调参数」）：直接打开它，不再套一层备份
+        val alreadyBackup = filtersFromDb.find { it.id == sourceFilterId && it.isPhotoBackup }
+        if (alreadyBackup != null) {
+            backupSaved = true // 老备份不算"本次新建"，退出时不删
+            editingRecipeId = alreadyBackup.id
+            return
+        }
         val cached = photoRecipeBackups["$photoUri#$sourceFilterId"]
         if (cached != null && filtersFromDb.any { it.id == cached }) {
             updateCurrentSettings(filterId = cached)
+            backupSaved = true
             editingRecipeId = cached
             return
         }
         scope.launch {
             val entity = filterRepository.getFilterById(sourceFilterId) ?: return@launch
             val takenNames = filtersFromDb.map { it.name }.toMutableSet()
-            var candidate = "${entity.name} · 单图备份"
+            var candidate = "${entity.name}$PHOTO_BACKUP_SUFFIX"
             var suffix = 2
             while (takenNames.contains(candidate)) {
-                candidate = "${entity.name} · 单图备份$suffix"
+                candidate = "${entity.name}$PHOTO_BACKUP_SUFFIX$suffix"
                 suffix++
             }
             val backup = entity.copy(
@@ -264,15 +278,40 @@ fun PhotoProcessScreen(
             )
             val newId = filterRepository.insert(backup)
             photoRecipeBackups["$photoUri#$sourceFilterId"] = newId
+            sessionBackups[newId] = sourceFilterId
+            backupSaved = false
             updateCurrentSettings(filterId = newId)
             editingRecipeId = newId
         }
     }
 
-    val filterOptions = remember(filtersFromDb) {
+    /**
+     * 关闭精修面板。
+     * 本次新建的备份如果一路没点过保存（参数和原配方完全一样），直接删掉并把当前滤镜退回原配方，
+     * 这样"试一下看看"不会在配方室里留一堆没用的副本。
+     */
+    fun closeRecipeEditor() {
+        val id = editingRecipeId
+        editingRecipeId = null
+        if (id == null) return
+        val sourceId = sessionBackups[id] ?: return
+        if (backupSaved) return
+        sessionBackups.remove(id)
+        photoRecipeBackups.entries.removeAll { it.value == id }
+        val photoUri = photos[selectedPhotoIndex].uri
+        updateCurrentSettings(filterId = sourceId)
+        scope.launch { filterRepository.deleteById(id) }
+    }
+
+    // 日常选滤镜用的列表：单图备份不进底部横排和整页平铺，免得把常用滤镜挤下去
+    val selectableFilters = remember(filtersFromDb) {
+        filtersFromDb.filterNot { it.isPhotoBackup }
+    }
+
+    val filterOptions = remember(selectableFilters) {
         buildList {
             add(FilterOption(0, "原图", null))
-            addAll(filtersFromDb.map { filter ->
+            addAll(selectableFilters.map { filter ->
                 FilterOption(filter.id, filter.name, null)
             })
         }
@@ -593,6 +632,10 @@ fun PhotoProcessScreen(
                 filterOptions = filterOptions,
                 engine = engine,
                 filtersFromDb = filtersFromDb,
+                onEditCurrentFilter = {
+                    val id = getCurrentSettings().filterId
+                    if (id != 0L) openRecipeEditor(id)
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
@@ -634,7 +677,13 @@ fun PhotoProcessScreen(
                     thumbnails = thumbnailStore.thumbnails,
                     original = thumbnailStore.original,
                     loadingIds = thumbnailStore.loading,
+                    // 轻点 = 只套用，画面立刻变，方便快速刷滤镜
                     onOptionSelected = {
+                        val id = it.toLongOrNull() ?: 0L
+                        updateCurrentSettings(filterId = id)
+                    },
+                    // 长按 = 套用并直接进精修面板
+                    onOptionLongClick = {
                         val id = it.toLongOrNull() ?: 0L
                         updateCurrentSettings(filterId = id)
                         openRecipeEditor(id)
@@ -665,6 +714,12 @@ fun PhotoProcessScreen(
             loadingIds = thumbnailStore.loading,
             original = thumbnailStore.original,
             onSelect = { filterId ->
+                // 轻点 = 只套用并收起面板
+                updateCurrentSettings(filterId = filterId)
+                showFilterGrid = false
+            },
+            onLongSelect = { filterId ->
+                // 长按 = 套用并直接进精修
                 updateCurrentSettings(filterId = filterId)
                 showFilterGrid = false
                 openRecipeEditor(filterId)
@@ -683,11 +738,12 @@ fun PhotoProcessScreen(
     val editingRecipe = editingRecipeId
     if (editingRecipe != null) {
         Box(modifier = Modifier.fillMaxSize()) {
-            BackHandler { editingRecipeId = null }
+            BackHandler { closeRecipeEditor() }
             FilterEditorScreen(
                 filterId = editingRecipe,
                 previewImageUri = photos[selectedPhotoIndex].uri,
-                onBackClick = { editingRecipeId = null }
+                onSaved = { backupSaved = true },
+                onBackClick = { closeRecipeEditor() }
             )
         }
     }
@@ -809,6 +865,7 @@ private fun MainPreviewArea(
     filterOptions: List<FilterOption>,
     engine: ImageProcessingEngine,
     filtersFromDb: List<FilterEntity>,
+    onEditCurrentFilter: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -957,7 +1014,10 @@ private fun MainPreviewArea(
                 )
             }
 
-            val filterName = filterOptions.find { it.id == currentSettings.filterId }?.name ?: "默认"
+            // 名字从完整列表取（含单图备份），否则精修后这里会显示成"默认"
+            val filterName = filtersFromDb.find { it.id == currentSettings.filterId }?.name
+                ?: filterOptions.find { it.id == currentSettings.filterId }?.name
+                ?: "默认"
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
@@ -1008,6 +1068,34 @@ private fun MainPreviewArea(
                 }
             }
 
+            // 精修入口：套了滤镜之后右上角常驻一个「精调参数」按钮，
+            // 不用记长按手势也能进配方室；点它 = 打开当前滤镜的精修面板
+            if (currentSettings.filterId != 0L && !isLongPressed) {
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(12.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color.Black.copy(alpha = 0.6f))
+                        .clickable { onEditCurrentFilter() }
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = MiuixIcons.Create,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Text(
+                        text = "精调参数",
+                        fontSize = 11.sp,
+                        color = Color.White
+                    )
+                }
+            }
+
         }
     }
 }
@@ -1020,7 +1108,8 @@ private fun EffectOptionsList(
     thumbnails: Map<Long, Bitmap> = emptyMap(),
     original: Bitmap? = null,
     loadingIds: Map<Long, Boolean> = emptyMap(),
-    onOptionSelected: (String) -> Unit
+    onOptionSelected: (String) -> Unit,
+    onOptionLongClick: ((String) -> Unit)? = null
 ) {
     val listState = rememberLazyListState()
     // 卡片按原图比例取高度，缩略图不再被方形裁掉上下边
@@ -1044,7 +1133,8 @@ private fun EffectOptionsList(
                     else -> thumbnails[filterId]
                 },
                 isLoading = filterId != null && loadingIds[filterId] == true,
-                onClick = { onOptionSelected(item.id) }
+                onClick = { onOptionSelected(item.id) },
+                onLongClick = onOptionLongClick?.let { cb -> { cb(item.id) } }
             )
         }
     }
@@ -1058,7 +1148,8 @@ private fun EffectOptionCard(
     imageAspect: Float? = null,
     bitmap: Bitmap?,
     isLoading: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null
 ) {
     val cardWidth = 88.dp
     // 卡片高度直接按照片真实比例算（横图变矮、竖图变高），只在极端比例处夹一下，
@@ -1072,7 +1163,10 @@ private fun EffectOptionCard(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
             .width(cardWidth)
-            .clickable(onClick = onClick)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            )
     ) {
         Box(
             modifier = Modifier

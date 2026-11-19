@@ -48,6 +48,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cn.alittlecookie.lutista.data.database.entity.FilterEntity
 import cn.alittlecookie.lutista.data.database.entity.WatermarkEntity
+import cn.alittlecookie.lutista.data.model.isPhotoBackup
+import cn.alittlecookie.lutista.data.model.isPhotoBackupName
 import cn.alittlecookie.lutista.data.repository.FilterRepository
 import cn.alittlecookie.lutista.data.repository.WatermarkRepository
 import cn.alittlecookie.lutista.domain.usecase.ExportFilterUseCase
@@ -168,7 +170,9 @@ fun RecipeRoomScreen(
     val filters = remember(filtersFromDb) {
         mutableStateListOf<RecipeItem>().apply {
             clear()
-            addAll(filtersFromDb.map { entity ->
+            // 单图备份统一排到最后，配合列表里的分组标题，不会混在常用配方中间
+            val ordered = filtersFromDb.sortedBy { if (it.isPhotoBackup) 1 else 0 }
+            addAll(ordered.map { entity ->
                 RecipeItem(
                     id = entity.id,
                     name = entity.name,
@@ -852,20 +856,40 @@ private fun RecipeList(
         modifier = modifier.overScrollVertical(),
         contentPadding = contentPadding
     ) {
-        itemsIndexed(items, key = { _, item -> item.id }) { _, item ->
+        itemsIndexed(items, key = { _, item -> item.id }) { index, item ->
+            // 单图备份分组标题：只在第一份备份前出现一次（放在同一条 LazyColumn item 里，拖拽排序不受影响）
+            val showBackupHeader = !isWatermarkTab && isPhotoBackupName(item.name) &&
+                (index == 0 || !isPhotoBackupName(items[index - 1].name))
             ReorderableItem(reorderableState, key = item.id) { isDragging ->
-                RecipeListItem(
-                    item = item,
-                    isDragging = isDragging,
-                    isWatermarkTab = isWatermarkTab,
-                    dragHandleModifier = Modifier.draggableHandle(
-                        onDragStarted = {},
-                        onDragStopped = {}
-                    ),
-                    onEditClick = { onEditClick(item) },
-                    onMoreAction = { action -> onMoreAction(item, action) },
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-                )
+                Column {
+                    if (showBackupHeader) {
+                        Column(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 2.dp)) {
+                            Text(
+                                text = "单图备份",
+                                style = MiuixTheme.textStyles.body2,
+                                fontWeight = FontWeight.Bold,
+                                color = MiuixTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "在单张照片上精修后留下的配方副本，只服务那张照片；没保存的会在退出时自动清掉",
+                                style = MiuixTheme.textStyles.footnote1,
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary
+                            )
+                        }
+                    }
+                    RecipeListItem(
+                        item = item,
+                        isDragging = isDragging,
+                        isWatermarkTab = isWatermarkTab,
+                        dragHandleModifier = Modifier.draggableHandle(
+                            onDragStarted = {},
+                            onDragStopped = {}
+                        ),
+                        onEditClick = { onEditClick(item) },
+                        onMoreAction = { action -> onMoreAction(item, action) },
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                    )
+                }
             }
         }
     }

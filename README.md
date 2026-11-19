@@ -59,6 +59,25 @@ Android 端 LUT 滤镜批量处理 App，支持导入照片、叠加 LUT、调�
 
 > 顺带修了一个实质 Bug：单图渲染此前只拷贝了配方的一部分字段（`lutPath*`、`lutConcentration*`、`lutPrecision`、曝光/对比/高光/阴影、饱和/色温/色调、暗角），**漏掉了全局 LUT 浓度、曲线、LCH、颗粒**，所以配方室里调好的曲线/HSL/颗粒在单图上根本不生效。现已统一由 `FilterEntity.toFilterConfig()` 完整转换，预览与导出用的是同一份参数。
 
+### 4. 轻点套用 / 长按精调，备份不再堆在滤镜列表里
+
+上一版是"点一下滤镜就弹配方室"，快速刷滤镜时要不停进进出出。这一版把两种意图拆开：
+
+| 操作 | 行为 |
+|---|---|
+| 底部横排**轻点**卡片 / 网格**轻点**格子 | 只把滤镜套上去，画面立即变，不弹面板（网格顺手收起） |
+| 底部横排**长按**卡片 / 网格**长按**格子 | 套用并直接进入精修面板（等价于原来的行为） |
+| 预览右上角 **「精调参数」** 按钮 | 常驻入口，套了滤镜后一直可见；点它就调当前滤镜，不用记长按手势 |
+
+网格面板底栏也加了一行提示"轻点套用 · 长按套用并精调"。
+
+同时把"单图备份"从日常滤镜列表里摘出来：
+
+- **底部横排、整页平铺、"放置"页的「滤镜选择」下拉都不再显示备份**，常用配方不会被挤到后面（实测整页平铺计数仍是 21 个而不是 24 个）。
+- 配方室列表把备份统一排到最末，并加分组标题「单图备份」+ 一行说明，一眼能分清哪些是常用配方、哪些是给某张照片临时留的。
+- **试一下但没保存的备份会自动清掉**：打开面板后一路没点保存就退出，这份副本会被删除，当前滤镜退回原配方，不会在配方室里留下一条"和原配方一模一样却没用的"条目。点过保存（含顶部菜单里的"保存"）则保留。
+- 备份不再"套娃"：如果当前选中的本身就是一份备份（比如刚精修完又点「精调参数」），直接打开它，不会再生成一层 `… · 单图备份 · 单图备份`。
+
 ---
 
 ## 二、实现要点
@@ -85,7 +104,10 @@ Android 端 LUT 滤镜批量处理 App，支持导入照片、叠加 LUT、调�
 新增  app/src/main/java/cn/alittlecookie/lutista/ui/preview/FilterThumbnailStore.kt   缩略图仓库（解码/队列/缓存）
 新增  app/src/main/java/cn/alittlecookie/lutista/ui/preview/PreviewConfig.kt          FilterEntity → 预览用 FilterConfig
 新增  app/src/main/java/cn/alittlecookie/lutista/ui/screen/FilterGridOverlay.kt       整页平铺面板（三档密度 + 分页）
-改动  app/src/main/java/cn/alittlecookie/lutista/ui/screen/PhotoProcessScreen.kt      底部行接入缩略图、网格入口
+新增  app/src/main/java/cn/alittlecookie/lutista/data/model/PhotoBackup.kt           单图备份命名约定与 isPhotoBackup 判断
+改动  app/src/main/java/cn/alittlecookie/lutista/ui/screen/PhotoProcessScreen.kt      底部行接入缩略图、网格入口、轻点/长按分流、备份清理
+改动  app/src/main/java/cn/alittlecookie/lutista/ui/screen/RecipeRoomScreen.kt        备份排到末尾并加分组标题
+改动  app/src/main/java/cn/alittlecookie/lutista/ui/screen/HomeScreen.kt             「滤镜选择」下拉过滤掉备份
 改动  app/src/main/java/cn/alittlecookie/lutista/domain/engine/ImageProcessingEngine.kt  预览入口加渲染锁
 改动  app/src/main/java/cn/alittlecookie/lutista/manager/SettingsManager.kt           持久化网格密度
 改动  app/build.gradle.kts                                                           versionCode/versionName
@@ -135,6 +157,21 @@ gradle :app:assembleDebug -Pandroid.injected.build.abi=arm64-v8a
 ---
 
 ## 四、版本更新记录
+
+### v1.3.0 · 2026-11-19
+
+**新增**
+- 预览区右上角常驻「精调参数」按钮：套了滤镜后一直可见，点它直接进配方室调当前滤镜。
+- 整页平铺底栏加提示"轻点套用 · 长按套用并精调"。
+- 配方室新增「单图备份」分组：备份统一排到最后并带分组标题与说明。
+
+**优化**
+- 交互拆分：轻点滤镜卡片/网格格子 = 只套用不弹面板；长按 = 套用并进精修。快速刷滤镜不用再反复进出面板。
+- 单图备份不再出现在底部横排、整页平铺、首页「滤镜选择」下拉，常用配方不再被挤到后面。
+- 备份不再套娃：当前选中的本身就是备份时直接打开它，不再生成 `… · 单图备份 · 单图备份`。
+
+**修复**
+- 试一下但没保存的备份会在退出时自动删除，并把当前滤镜退回原配方；以前每次"看看效果"都会在配方室里留一条无用副本。
 
 ### v1.2.0 · 2026-11-19
 
@@ -192,6 +229,22 @@ gradle :app:assembleDebug -Pandroid.injected.build.abi=arm64-v8a
 | 选中框贴合 | 格子尺寸等于图片尺寸，选中描边紧贴图片四边；宽屏 + 小档 4×6 时行高受限，整块等比缩小后紧凑居中，格子内部无左右留白 |
 | 长按查看原图 | 长按后显示无滤镜原图、松手回到滤镜效果，两个状态都是完整画面，过程中不再出现空白帧 |
 | 竖构图照片复查 | 1200×1600 竖构图照片在竖屏下三档实测：大档 2×3（格子最大、4 页）、中档 3×4（2 页）、小档 4×5（每页 20 个、基本铺满屏宽），图片比例与原始一致、无裁切，选中框紧贴图片 |
+
+### 验证记录（v1.3.0）
+
+MuMu 模拟器（Android 15，x86_64，临时放开 CMake 的 `x86_64` 编出带 Vulkan 的测试包，测完已还原），1080×2400 / 440dpi，用一张 1080×2400 截图作为测试照片：
+
+| 验证项 | 结果 |
+|---|---|
+| 轻点滤镜 | 点 CyanOrganic 后画面立即套上该滤镜、**面板不弹**，底部行高亮该卡，预览左上标签变 `CyanOrganic` |
+| 精调入口 | 套滤镜后预览右上出现「精调参数」圆角按钮；点它打开配方室，标题 `CyanOrganic · 单图备份2`，预览即这张照片 |
+| 长按卡片 | 长按底部横排的 CyanOrganic → 直接进配方室，标题同上 |
+| 长按网格 | 打开整页平铺（共 21 个 · 2×2，备份未计入），长按 CyanOrganic 格子 → 面板收起并进配方室 |
+| 未保存自动清理 | 进面板后直接返回（无"保存更改"弹窗，因为没改动）→ 滤镜退回 `CyanOrganic`；再进配方室，备份列表里**没有**新增这一条 |
+| 保存后保留 | 进面板把「全局 LUT 浓度」拖到 59% → 返回弹「保存更改」→ 点保存 → 单图页标签变 `CyanOrganic · 单图备份2`；配方室底部「单图备份」分组里出现该条 |
+| 备份不套娃 | 已选中备份时再点「精调参数」，标题仍是 `CyanOrganic · 单图备份2`，没有生成 `备份2 · 单图备份` |
+| 列表过滤 | 整页平铺计数 `共 21 个`（备份 3 条不进计数）；首页「滤镜选择」下拉里只有 无滤镜 + CyanOrganic、Fuji-ACROS… 等正常配方，无任何备份 |
+| 配方室分组 | 备份统一排在列表末尾，带标题「单图备份」和说明文字 |
 
 ### 验证记录（v1.2.0）
 
