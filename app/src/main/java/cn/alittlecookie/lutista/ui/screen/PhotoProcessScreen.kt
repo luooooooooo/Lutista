@@ -900,17 +900,15 @@ private fun MainPreviewArea(
                 } else null
             }
 
-            if (isLongPressed) {
-                AsyncImage(
-                    model = originalBitmap ?: photoUri,
-                    contentDescription = "Original",
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier.fillMaxSize()
-                )
-            } else if (previewBitmap != null) {
-                AsyncImage(
-                    model = previewBitmap,
-                    contentDescription = "Preview with filter",
+            val originalImage = remember(originalBitmap) { originalBitmap?.asImageBitmap() }
+            val previewImage = remember(previewBitmap) { previewBitmap?.asImageBitmap() }
+            val shownImage = if (isLongPressed) originalImage ?: previewImage else previewImage
+
+            // 同一 Image 槽位切换 Bitmap：不走 Coil 的异步加载，长按看原图时不黑屏/不闪
+            if (shownImage != null) {
+                Image(
+                    bitmap = shownImage,
+                    contentDescription = if (isLongPressed) "原图" else "滤镜预览",
                     contentScale = ContentScale.Fit,
                     modifier = Modifier.fillMaxSize()
                 )
@@ -989,6 +987,8 @@ private fun EffectOptionsList(
     onOptionSelected: (String) -> Unit
 ) {
     val listState = rememberLazyListState()
+    // 卡片按原图比例取高度，缩略图不再被方形裁掉上下边
+    val photoAspect = original?.let { it.width.toFloat() / it.height.toFloat() }?.takeIf { it > 0f }
 
     LazyRow(
         state = listState,
@@ -1001,6 +1001,7 @@ private fun EffectOptionsList(
                 item = item,
                 isSelected = item.id == selectedId,
                 isGlobalDefault = item.id == globalId,
+                imageAspect = photoAspect,
                 bitmap = when {
                     filterId == null -> null
                     filterId == 0L -> original
@@ -1018,19 +1019,27 @@ private fun EffectOptionCard(
     item: EffectItem,
     isSelected: Boolean,
     isGlobalDefault: Boolean,
+    imageAspect: Float? = null,
     bitmap: Bitmap?,
     isLoading: Boolean,
     onClick: () -> Unit
 ) {
+    val cardWidth = 88.dp
+    val cardHeight = if (imageAspect != null) {
+        (cardWidth / imageAspect).coerceIn(56.dp, 120.dp)
+    } else {
+        cardWidth
+    }
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
-            .width(88.dp)
+            .width(cardWidth)
             .clickable(onClick = onClick)
     ) {
         Box(
             modifier = Modifier
-                .size(88.dp)
+                .width(cardWidth)
+                .height(cardHeight)
                 .clip(RoundedCornerShape(14.dp))
                 .then(
                     if (isSelected) {
@@ -1049,7 +1058,7 @@ private fun EffectOptionCard(
                     Image(
                         bitmap = bitmap.asImageBitmap(),
                         contentDescription = item.name,
-                        contentScale = ContentScale.Crop,
+                        contentScale = ContentScale.Fit,
                         modifier = Modifier.fillMaxSize()
                     )
                 }
@@ -1058,7 +1067,7 @@ private fun EffectOptionCard(
                     AsyncImage(
                         model = item.thumbnail,
                         contentDescription = item.name,
-                        contentScale = ContentScale.Crop,
+                        contentScale = ContentScale.Fit,
                         modifier = Modifier.fillMaxSize()
                     )
                 }

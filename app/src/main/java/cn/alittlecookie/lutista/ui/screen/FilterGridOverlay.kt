@@ -35,6 +35,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
@@ -57,16 +58,14 @@ enum class FilterGridDensity(
     val label: String,
     val columns: Int,
     val rows: Int,
-    /** 图片区宽高比（宽 / 高） */
-    val imageAspect: Float,
     val gap: Dp,
     val corner: Dp,
     val labelSize: TextUnit,
     val labelHeight: Dp
 ) {
-    LARGE("large", "大", 2, 4, 4f / 3f, 10.dp, 14.dp, 12.sp, 20.dp),
-    MEDIUM("medium", "中", 3, 4, 4f / 5f, 8.dp, 12.dp, 11.sp, 18.dp),
-    SMALL("small", "小", 4, 6, 1f, 6.dp, 10.dp, 10.sp, 16.dp);
+    LARGE("large", "大", 2, 4, 10.dp, 14.dp, 12.sp, 20.dp),
+    MEDIUM("medium", "中", 3, 4, 8.dp, 12.dp, 11.sp, 18.dp),
+    SMALL("small", "小", 4, 6, 6.dp, 10.dp, 10.sp, 16.dp);
 
     val perPage: Int get() = columns * rows
 
@@ -267,10 +266,15 @@ private fun FilterGridPage(
 
         val cellWidth = (maxWidth - gap * (columns - 1)) / columns
         val rowHeight = (maxHeight - gap * (rows - 1)) / rows
-        val imageHeight = minOf(cellWidth / density.imageAspect, rowHeight - labelHeight)
+        // 格子宽度占满整列，高度按原图比例算；行高不够时退化到行高，图片按 Fit 等比居中（不裁切）。
+        val maxImageHeight = (rowHeight - labelHeight).coerceAtLeast(24.dp)
+        val photoAspect = remember(original) {
+            original?.let { it.width.toFloat() / it.height.toFloat() }?.takeIf { it > 0f } ?: 1f
+        }
+        val imageHeight = minOf(cellWidth / photoAspect, maxImageHeight)
 
         Column(
-            modifier = Modifier.align(Alignment.TopCenter),
+            modifier = Modifier.align(Alignment.Center),
             verticalArrangement = Arrangement.spacedBy(gap)
         ) {
             repeat(rows) { rowIndex ->
@@ -284,6 +288,7 @@ private fun FilterGridPage(
                                 item = item,
                                 width = cellWidth,
                                 imageHeight = imageHeight,
+                                labelWidth = cellWidth,
                                 density = density,
                                 isSelected = item.id == selectedId,
                                 bitmap = if (item.id == 0L) original else thumbnails[item.id],
@@ -303,6 +308,7 @@ private fun FilterGridCell(
     item: FilterGridItem,
     width: Dp,
     imageHeight: Dp,
+    labelWidth: Dp,
     density: FilterGridDensity,
     isSelected: Boolean,
     bitmap: Bitmap?,
@@ -311,8 +317,9 @@ private fun FilterGridCell(
 ) {
     Column(
         modifier = Modifier
-            .width(width)
-            .clickable(onClick = onClick)
+            .width(labelWidth)
+            .clickable(onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
             modifier = Modifier
@@ -334,7 +341,7 @@ private fun FilterGridCell(
                 Image(
                     bitmap = bitmap.asImageBitmap(),
                     contentDescription = item.name,
-                    contentScale = ContentScale.Crop,
+                    contentScale = ContentScale.Fit,
                     modifier = Modifier.fillMaxSize()
                 )
             } else {
@@ -394,6 +401,8 @@ private fun FilterGridCell(
                 fontSize = density.labelSize,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.width(labelWidth),
                 color = if (isSelected) {
                     MiuixTheme.colorScheme.primary
                 } else {
