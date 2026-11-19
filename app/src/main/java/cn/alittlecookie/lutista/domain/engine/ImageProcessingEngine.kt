@@ -34,24 +34,32 @@ class ImageProcessingEngine(
     @Volatile private var lut1Uploaded = false
     @Volatile private var lut2Uploaded = false
 
+    /**
+     * Vulkan 引擎是进程内单例，LUT/曲线纹理的上传和 processImage 必须成对串行执行，
+     * 否则并发请求（主预览 + 缩略图）会用错对方的 LUT。这里统一加一把渲染锁。
+     */
+    private val renderLock = Any()
+
     fun processImageGpuFromBytes(
         rgbaBytes: ByteArray, width: Int, height: Int, filter: FilterConfig
     ): Bitmap? {
         if (!vulkanGpuEngine.isAvailable) return null
-        try {
-            uploadLutIfNeeded(filter)
-            uploadCurvesIfNeeded(filter)
-            val params = buildGpuParams(filter)
-            val inputCopy = rgbaBytes.copyOf()
-            val resultBytes = vulkanGpuEngine.processImage(inputCopy, width, height, params)
-                ?: return null
-            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-            bitmap.copyPixelsFromBuffer(ByteBuffer.wrap(resultBytes))
-            return bitmap
-        } catch (e: Exception) {
-            if (e is kotlinx.coroutines.CancellationException) throw e
-            logger.w(TAG, "GPU processing from bytes failed", e)
-            return null
+        return synchronized(renderLock) {
+            try {
+                uploadLutIfNeeded(filter)
+                uploadCurvesIfNeeded(filter)
+                val params = buildGpuParams(filter)
+                val inputCopy = rgbaBytes.copyOf()
+                val resultBytes = vulkanGpuEngine.processImage(inputCopy, width, height, params)
+                    ?: return@synchronized null
+                val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                bitmap.copyPixelsFromBuffer(ByteBuffer.wrap(resultBytes))
+                bitmap
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                logger.w(TAG, "GPU processing from bytes failed", e)
+                null
+            }
         }
     }
 
@@ -59,30 +67,32 @@ class ImageProcessingEngine(
         context: Context, uri: String, filter: FilterConfig
     ): Bitmap? {
         if (!vulkanGpuEngine.isAvailable) return null
-        try {
-            val inputBitmap = context.contentResolver.openInputStream(Uri.parse(uri))?.use { stream ->
-                BitmapFactory.decodeStream(stream)
-            }?.let { ExifUtils.correctOrientation(it, context, Uri.parse(uri)) }
-                ?: return null
+        return synchronized(renderLock) {
+            try {
+                val inputBitmap = context.contentResolver.openInputStream(Uri.parse(uri))?.use { stream ->
+                    BitmapFactory.decodeStream(stream)
+                }?.let { ExifUtils.correctOrientation(it, context, Uri.parse(uri)) }
+                    ?: return@synchronized null
 
-            val width = inputBitmap.width
-            val height = inputBitmap.height
-            val rgbaBytes = ByteArray(width * height * 4)
-            inputBitmap.copyPixelsToBuffer(ByteBuffer.wrap(rgbaBytes))
+                val width = inputBitmap.width
+                val height = inputBitmap.height
+                val rgbaBytes = ByteArray(width * height * 4)
+                inputBitmap.copyPixelsToBuffer(ByteBuffer.wrap(rgbaBytes))
 
-            uploadLutIfNeeded(filter)
-            uploadCurvesIfNeeded(filter)
-            val params = buildGpuParams(filter)
-            val resultBytes = vulkanGpuEngine.processImage(rgbaBytes, width, height, params)
-            inputBitmap.recycle()
+                uploadLutIfNeeded(filter)
+                uploadCurvesIfNeeded(filter)
+                val params = buildGpuParams(filter)
+                val resultBytes = vulkanGpuEngine.processImage(rgbaBytes, width, height, params)
+                inputBitmap.recycle()
 
-            if (resultBytes == null) return null
-            val result = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-            result.copyPixelsFromBuffer(ByteBuffer.wrap(resultBytes))
-            return result
-        } catch (e: Exception) {
-            logger.w(TAG, "GPU processing from URI failed", e)
-            return null
+                if (resultBytes == null) return@synchronized null
+                val result = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                result.copyPixelsFromBuffer(ByteBuffer.wrap(resultBytes))
+                result
+            } catch (e: Exception) {
+                logger.w(TAG, "GPU processing from URI failed", e)
+                null
+            }
         }
     }
 
@@ -90,20 +100,22 @@ class ImageProcessingEngine(
         if (!vulkanGpuEngine.isAvailable) {
             throw IllegalStateException("Vulkan GPU not available")
         }
-        val width = bitmap.width
-        val height = bitmap.height
-        val rgbaBytes = ByteArray(width * height * 4)
-        bitmap.copyPixelsToBuffer(ByteBuffer.wrap(rgbaBytes))
+        return synchronized(renderLock) {
+            val width = bitmap.width
+            val height = bitmap.height
+            val rgbaBytes = ByteArray(width * height * 4)
+            bitmap.copyPixelsToBuffer(ByteBuffer.wrap(rgbaBytes))
 
-        uploadLutIfNeeded(filter)
-        uploadCurvesIfNeeded(filter)
-        val params = buildGpuParams(filter)
-        val resultBytes = vulkanGpuEngine.processImage(rgbaBytes, width, height, params)
-            ?: throw IllegalStateException("GPU processing failed")
+            uploadLutIfNeeded(filter)
+            uploadCurvesIfNeeded(filter)
+            val params = buildGpuParams(filter)
+            val resultBytes = vulkanGpuEngine.processImage(rgbaBytes, width, height, params)
+                ?: throw IllegalStateException("GPU processing failed")
 
-        val result = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-        result.copyPixelsFromBuffer(ByteBuffer.wrap(resultBytes))
-        return result
+            val result = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            result.copyPixelsFromBuffer(ByteBuffer.wrap(resultBytes))
+            result
+        }
     }
 
     fun processImageWithUnifiedLut(bitmap: Bitmap, unifiedLut: UnifiedLut): Bitmap {

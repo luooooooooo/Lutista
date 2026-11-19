@@ -12,6 +12,7 @@ import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -35,7 +36,11 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -49,6 +54,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -65,6 +71,7 @@ import cn.alittlecookie.lutista.domain.engine.ImageProcessingEngine
 import cn.alittlecookie.lutista.manager.LogManager
 import cn.alittlecookie.lutista.manager.OutputFormat
 import cn.alittlecookie.lutista.manager.SettingsManager
+import cn.alittlecookie.lutista.ui.preview.FilterThumbnailStore
 import cn.alittlecookie.lutista.util.ExifResolution
 import cn.alittlecookie.lutista.util.ExifUtils
 import cn.alittlecookie.lutista.watermark.model.Scene
@@ -132,6 +139,12 @@ fun PhotoProcessScreen(
     val scrollBehavior = MiuixScrollBehavior(rememberTopAppBarState())
     val scope = rememberCoroutineScope()
 
+    // 底部滤镜行 + 整页平铺共用的实时缩略图仓库
+    val thumbnailStore = remember { FilterThumbnailStore(context, engine, logger) }
+    DisposableEffect(Unit) {
+        onDispose { thumbnailStore.release() }
+    }
+
     val photos = remember {
         photoUris.mapIndexed { index, uri -> PhotoItem(uri, index) }
     }
@@ -149,6 +162,9 @@ fun PhotoProcessScreen(
     var globalFilterId by remember { mutableStateOf(0L) }
     var globalWatermarkId by remember { mutableStateOf("none") }
 
+    var showFilterGrid by remember { mutableStateOf(false) }
+    var gridDensity by remember { mutableStateOf(FilterGridDensity.MEDIUM) }
+
     // Watermark scene cache: map watermarkId (String) -> Scene
     val watermarkSceneCache = remember { mutableMapOf<String, Scene?>() }
 
@@ -163,6 +179,7 @@ fun PhotoProcessScreen(
     LaunchedEffect(Unit) {
         globalFilterId = settingsManager.globalFilterId.first()
         globalWatermarkId = settingsManager.globalWatermarkId.first()
+        gridDensity = FilterGridDensity.fromKey(settingsManager.filterGridDensity.first())
         for (i in perImageSettings.indices) {
             perImageSettings[i] = PhotoEffectSettings(
                 filterId = globalFilterId,
@@ -208,6 +225,18 @@ fun PhotoProcessScreen(
                 FilterOption(filter.id, filter.name, null)
             })
         }
+    }
+
+    val gridItems = remember(filterOptions, globalFilterId) {
+        filterOptions.map { FilterGridItem(it.id, it.name, it.id == globalFilterId) }
+    }
+
+    // 选中照片变化 → 重建基准图；滤镜列表变化 → 全量排入空闲队列
+    LaunchedEffect(selectedPhotoIndex) {
+        thumbnailStore.setPhoto(photos[selectedPhotoIndex].uri)
+    }
+    LaunchedEffect(filtersFromDb) {
+        thumbnailStore.request(filtersFromDb, FilterThumbnailStore.PRIORITY_IDLE)
     }
 
     val watermarksFromDb by watermarkRepository.getEnabledWatermarks().collectAsState(initial = emptyList())
@@ -479,6 +508,7 @@ fun PhotoProcessScreen(
     }
     if (showResultScreen) return
 
+    Box(modifier = Modifier.fillMaxSize()) {
     Scaffold(
         topBar = {
             SmallTopAppBar(
@@ -535,18 +565,41 @@ fun PhotoProcessScreen(
             )
 
             val tabs = listOf("滤镜", "边框水印")
-            TabRow(
-                tabs = tabs,
-                selectedTabIndex = selectedTabIndex,
-                onTabSelected = { selectedTabIndex = it },
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TabRow(
+                    tabs = tabs,
+                    selectedTabIndex = selectedTabIndex,
+                    onTabSelected = { selectedTabIndex = it },
+                    modifier = Modifier.weight(1f)
+                )
+                IconButton(
+                    onClick = { if (selectedTabIndex == 0) showFilterGrid = true }
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.GridView,
+                        contentDescription = "整页平铺",
+                        tint = if (selectedTabIndex == 0) {
+                            MiuixTheme.colorScheme.onSurface
+                        } else {
+                            MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.4f)
+                        }
+                    )
+                }
+            }
 
             if (selectedTabIndex == 0) {
                 EffectOptionsList(
                     options = filterOptions.map { EffectItem(it.id.toString(), it.name, it.thumbnail) },
                     selectedId = getCurrentSettings().filterId.toString(),
                     globalId = globalFilterId.toString(),
+                    thumbnails = thumbnailStore.thumbnails,
+                    original = thumbnailStore.original,
+                    loadingIds = thumbnailStore.loading,
                     onOptionSelected = { updateCurrentSettings(filterId = it.toLongOrNull() ?: 0L) }
                 )
             } else {
@@ -558,6 +611,32 @@ fun PhotoProcessScreen(
                 )
             }
         }
+    }
+    }
+
+    if (showFilterGrid) {
+        FilterGridOverlay(
+            items = gridItems,
+            selectedId = getCurrentSettings().filterId,
+            density = gridDensity,
+            onDensityChange = { option ->
+                gridDensity = option
+                scope.launch { settingsManager.setFilterGridDensity(option.key) }
+            },
+            thumbnails = thumbnailStore.thumbnails,
+            loadingIds = thumbnailStore.loading,
+            original = thumbnailStore.original,
+            onSelect = { filterId ->
+                updateCurrentSettings(filterId = filterId)
+                showFilterGrid = false
+            },
+            onVisibleIdsChanged = { ids ->
+                val visible = filtersFromDb.filter { it.id in ids }
+                thumbnailStore.request(visible, FilterThumbnailStore.PRIORITY_VISIBLE)
+                thumbnailStore.request(filtersFromDb, FilterThumbnailStore.PRIORITY_IDLE)
+            },
+            onDismiss = { showFilterGrid = false }
+        )
     }
 
     if (showProcessingDialog) {
@@ -904,6 +983,9 @@ private fun EffectOptionsList(
     options: List<EffectItem>,
     selectedId: String,
     globalId: String,
+    thumbnails: Map<Long, Bitmap> = emptyMap(),
+    original: Bitmap? = null,
+    loadingIds: Map<Long, Boolean> = emptyMap(),
     onOptionSelected: (String) -> Unit
 ) {
     val listState = rememberLazyListState()
@@ -914,10 +996,17 @@ private fun EffectOptionsList(
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         itemsIndexed(options) { _, item ->
+            val filterId = item.id.toLongOrNull()
             EffectOptionCard(
                 item = item,
                 isSelected = item.id == selectedId,
                 isGlobalDefault = item.id == globalId,
+                bitmap = when {
+                    filterId == null -> null
+                    filterId == 0L -> original
+                    else -> thumbnails[filterId]
+                },
+                isLoading = filterId != null && loadingIds[filterId] == true,
                 onClick = { onOptionSelected(item.id) }
             )
         }
@@ -929,6 +1018,8 @@ private fun EffectOptionCard(
     item: EffectItem,
     isSelected: Boolean,
     isGlobalDefault: Boolean,
+    bitmap: Bitmap?,
+    isLoading: Boolean,
     onClick: () -> Unit
 ) {
     Column(
@@ -953,24 +1044,54 @@ private fun EffectOptionCard(
                     }
                 )
         ) {
-            if (item.thumbnail != null) {
-                AsyncImage(
-                    model = item.thumbnail,
-                    contentDescription = item.name,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
-            } else {
+            when {
+                bitmap != null -> {
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = item.name,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+
+                item.thumbnail != null -> {
+                    AsyncImage(
+                        model = item.thumbnail,
+                        contentDescription = item.name,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+
+                else -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MiuixTheme.colorScheme.surfaceVariant),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = item.name.first().toString(),
+                            fontSize = 24.sp,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary
+                        )
+                    }
+                }
+            }
+
+            if (isLoading && bitmap == null) {
                 Box(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .background(MiuixTheme.colorScheme.surfaceVariant),
+                        .align(Alignment.BottomStart)
+                        .padding(6.dp)
+                        .size(16.dp)
+                        .background(Color.Black.copy(alpha = 0.28f), CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = item.name.first().toString(),
-                        fontSize = 24.sp,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(11.dp),
+                        strokeWidth = 1.5.dp,
+                        color = Color.White
                     )
                 }
             }

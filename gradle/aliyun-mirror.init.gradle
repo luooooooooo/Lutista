@@ -1,0 +1,15 @@
+// 本地构建辅助：把插件/依赖仓库指向阿里云镜像，避免 maven.google.com / repo.maven.apache.org 在国内过慢。
+// 用法：gradle --init-script gradle/aliyun-mirror.init.gradle ...
+// 不属于项目源码，不入库。
+settingsEvaluated { settings ->
+    settings.pluginManagement.repositories.clear()
+    settings.pluginManagement.repositories.maven { url = uri('https://maven.aliyun.com/repository/gradle-plugin') }
+    settings.pluginManagement.repositories.maven { url = uri('https://maven.aliyun.com/repository/google') }
+    settings.pluginManagement.repositories.maven { url = uri('https://maven.aliyun.com/repository/public') }
+    settings.pluginManagement.repositories.maven { url = uri('https://plugins.gradle.org/m2') }
+
+    settings.dependencyResolutionManagement.repositories.clear()
+    settings.dependencyResolutionManagement.repositories.maven { url = uri('https://maven.aliyun.com/repository/google') }
+    settings.dependencyResolutionManagement.repositories.maven { url = uri('https://maven.aliyun.com/repository/central') }
+    settings.dependencyResolutionManagement.repositories.maven { url = uri('https://maven.aliyun.com/repository/public') }
+}

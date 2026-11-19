@@ -142,6 +142,19 @@ class SettingsManager(
         dataStore.data.first()[GLOBAL_WATERMARK_ID_KEY] ?: "none"
     }
 
+    // 滤镜整页平铺的密度档位（large / medium / small）
+    val filterGridDensity: Flow<String> = dataStore.data.map { prefs ->
+        prefs[FILTER_GRID_DENSITY_KEY] ?: "medium"
+    }
+
+    suspend fun setFilterGridDensity(value: String) {
+        dataStore.edit { prefs -> prefs[FILTER_GRID_DENSITY_KEY] = value }
+    }
+
+    fun getFilterGridDensitySync(): String = runBlocking {
+        dataStore.data.first()[FILTER_GRID_DENSITY_KEY] ?: "medium"
+    }
+
     // 自定义输出文件夹 (SAF URI 字符串或文件系统路径)
     val outputPath: Flow<String> = dataStore.data.map { prefs ->
         prefs[OUTPUT_PATH_KEY] ?: ""
@@ -359,6 +372,7 @@ class SettingsManager(
         private val BUILTIN_FILTER_VERSION_KEY = intPreferencesKey("builtin_filter_version")
         private val GLOBAL_FILTER_ID_KEY = stringPreferencesKey("global_filter_id")
         private val GLOBAL_WATERMARK_ID_KEY = stringPreferencesKey("global_watermark_id")
+        private val FILTER_GRID_DENSITY_KEY = stringPreferencesKey("filter_grid_density")
         private val OUTPUT_PATH_KEY = stringPreferencesKey("output_path")
         private val MONITOR_RUNNING_KEY = booleanPreferencesKey("monitor_running")
         private val ONLY_NEW_FILES_KEY = booleanPreferencesKey("only_new_files")
