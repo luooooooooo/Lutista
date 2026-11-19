@@ -463,14 +463,14 @@ private fun StatusSection(
                 ) {
                     Text(
                         modifier = Modifier.fillMaxWidth(),
-                        text = "从相册选择",
+                        text = "从相册选择 · 单张精修",
                         fontWeight = FontWeight.Medium,
                         fontSize = 16.sp,
                         color = colorScheme.onSurface
                     )
                     Text(
                         modifier = Modifier.fillMaxWidth(),
-                        text = "选择图片进行处理",
+                        text = "选照片后点任意滤镜，可调强度 / 曲线 / 色彩 / 暗角 / 颗粒",
                         fontSize = 13.sp,
                         color = colorScheme.onSurfaceVariantSummary.copy(alpha = 0.7f)
                     )

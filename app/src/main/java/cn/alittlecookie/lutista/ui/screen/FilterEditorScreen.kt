@@ -1,5 +1,6 @@
 package cn.alittlecookie.lutista.ui.screen
 
+import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -125,7 +126,9 @@ private enum class CurveChannel(val label: String, val color: Color) {
 @Composable
 fun FilterEditorScreen(
     filterId: Long,
-    onBackClick: () -> Unit
+    onBackClick: () -> Unit,
+    /** 指定预览图（单图精修时传入当前照片）；为空则用内置预览图 */
+    previewImageUri: String? = null
 ) {
     val context = LocalContext.current
     val filterRepository: FilterRepository = koinInject()
@@ -148,10 +151,12 @@ fun FilterEditorScreen(
     }
 
     // 加载滤镜 & 初始化预览
-    LaunchedEffect(filterId) {
+    LaunchedEffect(filterId, previewImageUri) {
         kotlinx.coroutines.delay(1.milliseconds)
         state.loadFilter()
         state.initPreview()
+        // 单图精修：预览图换成用户当前选中的那张照片
+        previewImageUri?.let { state.loadPreviewImage(Uri.parse(it)) }
     }
 
     // 释放资源

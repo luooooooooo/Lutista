@@ -46,6 +46,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -65,6 +66,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cn.alittlecookie.lutista.data.database.entity.FilterEntity
 import cn.alittlecookie.lutista.data.model.FilterConfig
+import cn.alittlecookie.lutista.data.model.toFilterConfig
 import cn.alittlecookie.lutista.data.repository.FilterRepository
 import cn.alittlecookie.lutista.data.repository.WatermarkRepository
 import cn.alittlecookie.lutista.domain.engine.ImageProcessingEngine
@@ -165,6 +167,11 @@ fun PhotoProcessScreen(
     var showFilterGrid by remember { mutableStateOf(false) }
     var gridDensity by remember { mutableStateOf(FilterGridDensity.MEDIUM) }
 
+    // 单图精修：点任意滤镜 → 先把该配方整份复制成"单图备份"，再进入配方室调整
+    // 同一张照片 + 同一个滤镜只备份一次，反复点不会堆一堆备份
+    var editingRecipeId by remember { mutableStateOf<Long?>(null) }
+    val photoRecipeBackups = remember { mutableStateMapOf<String, Long>() }
+
     // Watermark scene cache: map watermarkId (String) -> Scene
     val watermarkSceneCache = remember { mutableMapOf<String, Scene?>() }
 
@@ -217,6 +224,50 @@ fun PhotoProcessScreen(
     }
 
     val filtersFromDb by filterRepository.getEnabledFilters().collectAsState(initial = emptyList())
+
+    /**
+     * 点击滤镜 → 应用 + 打开配方室精修。
+     * 打开前先整份复制该配方（LUT/双 LUT/浓度/曲线/HSL/暗角/颗粒全部字段），
+     * 之后的调整只改这份副本，原配方和实时监听用的默认配方不受影响。
+     */
+    fun openRecipeEditor(sourceFilterId: Long) {
+        if (sourceFilterId == 0L) {
+            updateCurrentSettings(filterId = 0L)
+            return
+        }
+        val photoUri = photos[selectedPhotoIndex].uri
+        val cached = photoRecipeBackups["$photoUri#$sourceFilterId"]
+        if (cached != null && filtersFromDb.any { it.id == cached }) {
+            updateCurrentSettings(filterId = cached)
+            editingRecipeId = cached
+            return
+        }
+        scope.launch {
+            val entity = filterRepository.getFilterById(sourceFilterId) ?: return@launch
+            val takenNames = filtersFromDb.map { it.name }.toMutableSet()
+            var candidate = "${entity.name} · 单图备份"
+            var suffix = 2
+            while (takenNames.contains(candidate)) {
+                candidate = "${entity.name} · 单图备份$suffix"
+                suffix++
+            }
+            val backup = entity.copy(
+                id = 0,
+                name = candidate,
+                isDefault = false,
+                isBuiltIn = false,
+                // 统一 LUT 缓存是按原配方算的，副本清掉让引擎按新参数重算
+                unifiedLutPath = null,
+                unifiedLutHash = null,
+                createdAt = System.currentTimeMillis(),
+                updatedAt = System.currentTimeMillis()
+            )
+            val newId = filterRepository.insert(backup)
+            photoRecipeBackups["$photoUri#$sourceFilterId"] = newId
+            updateCurrentSettings(filterId = newId)
+            editingRecipeId = newId
+        }
+    }
 
     val filterOptions = remember(filtersFromDb) {
         buildList {
@@ -303,24 +354,7 @@ fun PhotoProcessScreen(
 
     fun buildFilterConfig(filterId: Long): FilterConfig? {
         if (filterId == 0L) return null
-        val entity = filtersFromDb.find { it.id == filterId } ?: return null
-        return FilterConfig(
-            id = entity.id,
-            name = entity.name,
-            lutPath1 = entity.lutPath1,
-            lutConcentration1 = entity.lutConcentration1,
-            lutPath2 = entity.lutPath2,
-            lutConcentration2 = entity.lutConcentration2,
-            lutPrecision = entity.lutPrecision,
-            exposure = entity.exposure,
-            contrast = entity.contrast,
-            highlights = entity.highlights,
-            shadows = entity.shadows,
-            saturation = entity.saturation,
-            colorTemperature = entity.colorTemperature,
-            tint = entity.tint,
-            vignetteStrength = entity.vignetteStrength
-        )
+        return filtersFromDb.find { it.id == filterId }?.toFilterConfig()
     }
 
     fun saveBitmapToGallery(context: Context, bitmap: Bitmap, displayName: String, exifResolution: ExifResolution?, outputFormat: OutputFormat, quality: Int): Uri? {
@@ -600,7 +634,11 @@ fun PhotoProcessScreen(
                     thumbnails = thumbnailStore.thumbnails,
                     original = thumbnailStore.original,
                     loadingIds = thumbnailStore.loading,
-                    onOptionSelected = { updateCurrentSettings(filterId = it.toLongOrNull() ?: 0L) }
+                    onOptionSelected = {
+                        val id = it.toLongOrNull() ?: 0L
+                        updateCurrentSettings(filterId = id)
+                        openRecipeEditor(id)
+                    }
                 )
             } else {
                 EffectOptionsList(
@@ -629,6 +667,7 @@ fun PhotoProcessScreen(
             onSelect = { filterId ->
                 updateCurrentSettings(filterId = filterId)
                 showFilterGrid = false
+                openRecipeEditor(filterId)
             },
             onVisibleIdsChanged = { ids ->
                 val visible = filtersFromDb.filter { it.id in ids }
@@ -637,6 +676,20 @@ fun PhotoProcessScreen(
             },
             onDismiss = { showFilterGrid = false }
         )
+    }
+
+    // 单图精修面板：直接复用配方室（LUT 强度 / 双 LUT 叠加 / 曲线 / HSL / 暗角 / 颗粒），
+    // 预览图固定为当前这张照片，改完返回即时回到单图处理界面
+    val editingRecipe = editingRecipeId
+    if (editingRecipe != null) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            BackHandler { editingRecipeId = null }
+            FilterEditorScreen(
+                filterId = editingRecipe,
+                previewImageUri = photos[selectedPhotoIndex].uri,
+                onBackClick = { editingRecipeId = null }
+            )
+        }
     }
 
     if (showProcessingDialog) {
@@ -774,24 +827,7 @@ private fun MainPreviewArea(
 
     fun buildConfigForPreview(filterId: Long): FilterConfig? {
         if (filterId == 0L) return null
-        val entity = filtersFromDb.find { it.id == filterId } ?: return null
-        return FilterConfig(
-            id = entity.id,
-            name = entity.name,
-            lutPath1 = entity.lutPath1,
-            lutConcentration1 = entity.lutConcentration1,
-            lutPath2 = entity.lutPath2,
-            lutConcentration2 = entity.lutConcentration2,
-            lutPrecision = entity.lutPrecision,
-            exposure = entity.exposure,
-            contrast = entity.contrast,
-            highlights = entity.highlights,
-            shadows = entity.shadows,
-            saturation = entity.saturation,
-            colorTemperature = entity.colorTemperature,
-            tint = entity.tint,
-            vignetteStrength = entity.vignetteStrength
-        )
+        return filtersFromDb.find { it.id == filterId }?.toFilterConfig()
     }
 
     // Step 1: Decode image at preview resolution and cache RGBA bytes (only when photo changes)
