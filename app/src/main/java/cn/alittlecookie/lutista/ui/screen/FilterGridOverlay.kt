@@ -266,15 +266,18 @@ private fun FilterGridPage(
 
         val cellWidth = (maxWidth - gap * (columns - 1)) / columns
         val rowHeight = (maxHeight - gap * (rows - 1)) / rows
-        // 格子宽度占满整列，高度按原图比例算；行高不够时退化到行高，图片按 Fit 等比居中（不裁切）。
+        // 先把格子按原图比例算出来，再让格子本身等于图片尺寸：
+        // 行高不够时整格等比缩小，不在格子内部留白，选中框才能紧贴图片。
         val maxImageHeight = (rowHeight - labelHeight).coerceAtLeast(24.dp)
         val photoAspect = remember(original) {
             original?.let { it.width.toFloat() / it.height.toFloat() }?.takeIf { it > 0f } ?: 1f
         }
         val imageHeight = minOf(cellWidth / photoAspect, maxImageHeight)
+        val imageWidth = (imageHeight * photoAspect).coerceAtMost(cellWidth)
 
         Column(
             modifier = Modifier.align(Alignment.Center),
+            horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(gap)
         ) {
             repeat(rows) { rowIndex ->
@@ -282,13 +285,14 @@ private fun FilterGridPage(
                     repeat(columns) { columnIndex ->
                         val item = items.getOrNull(rowIndex * columns + columnIndex)
                         if (item == null) {
-                            Spacer(Modifier.width(cellWidth))
+                            // 空格子也占位，保证每行宽度一致、列与列对得齐
+                            Spacer(Modifier.width(imageWidth))
                         } else {
                             FilterGridCell(
                                 item = item,
-                                width = cellWidth,
+                                width = imageWidth,
                                 imageHeight = imageHeight,
-                                labelWidth = cellWidth,
+                                labelWidth = imageWidth,
                                 density = density,
                                 isSelected = item.id == selectedId,
                                 bitmap = if (item.id == 0L) original else thumbnails[item.id],
