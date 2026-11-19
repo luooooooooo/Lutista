@@ -52,22 +52,29 @@ import top.yukonga.miuix.kmp.icon.extended.Ok
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import kotlin.math.ceil
 
-/** 整页平铺的三档密度 */
+/**
+ * 整页平铺的三档密度。
+ *
+ * 三档必须同时改行数，只改列数没有意义：格子大小实际由"行高"决定，
+ * 行数相同的两档会算出同样大的格子，只是列数少的看起来更小。
+ */
 enum class FilterGridDensity(
     val key: String,
     val label: String,
     val columns: Int,
     val rows: Int,
+    /** 每页个数；为空时等于 columns × rows（小档为满足"每页 24 个"特意留最后一格空位） */
+    private val fixedPerPage: Int? = null,
     val gap: Dp,
     val corner: Dp,
     val labelSize: TextUnit,
     val labelHeight: Dp
 ) {
-    LARGE("large", "大", 2, 4, 10.dp, 14.dp, 12.sp, 20.dp),
-    MEDIUM("medium", "中", 3, 4, 8.dp, 12.dp, 11.sp, 18.dp),
-    SMALL("small", "小", 4, 6, 6.dp, 10.dp, 10.sp, 16.dp);
+    LARGE("large", "大", 2, 3, null, 10.dp, 14.dp, 12.sp, 20.dp),
+    MEDIUM("medium", "中", 3, 4, null, 8.dp, 12.dp, 11.sp, 18.dp),
+    SMALL("small", "小", 5, 5, 24, 6.dp, 10.dp, 10.sp, 16.dp);
 
-    val perPage: Int get() = columns * rows
+    val perPage: Int get() = fixedPerPage ?: (columns * rows)
 
     companion object {
         fun fromKey(key: String?): FilterGridDensity =
