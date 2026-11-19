@@ -71,7 +71,7 @@ enum class FilterGridDensity(
     val columns: Int,
     /** 最多行数上限（行数实际由可用高度 ÷ 格子高度算出，这里只做上限） */
     val maxRows: Int,
-    /** 目标格宽：按它算列数，手机上正好是 2/3/5 列，横屏或平板会自动增加列数 */
+    /** 目标格宽：按它算列数，手机上正好是 2/3/4 列，横屏或平板会自动增加列数 */
     val minCellWidth: Dp,
     val gap: Dp,
     val corner: Dp,
@@ -80,7 +80,7 @@ enum class FilterGridDensity(
 ) {
     LARGE("large", "大", 2, 6, 190.dp, 10.dp, 14.dp, 12.sp, 20.dp),
     MEDIUM("medium", "中", 3, 8, 126.dp, 8.dp, 12.dp, 11.sp, 18.dp),
-    SMALL("small", "小", 5, 10, 72.dp, 6.dp, 10.dp, 10.sp, 16.dp);
+    SMALL("small", "小", 4, 10, 92.dp, 8.dp, 10.dp, 10.sp, 16.dp);
 
     /**
      * 按真实可用空间 + 当前照片的真实宽高比，算出这一档的实际行列与格子尺寸。
