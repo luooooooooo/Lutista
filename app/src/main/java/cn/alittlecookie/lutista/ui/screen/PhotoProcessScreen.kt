@@ -1025,8 +1025,10 @@ private fun EffectOptionCard(
     onClick: () -> Unit
 ) {
     val cardWidth = 88.dp
-    val cardHeight = if (imageAspect != null) {
-        (cardWidth / imageAspect).coerceIn(56.dp, 120.dp)
+    // 卡片高度直接按照片真实比例算（横图变矮、竖图变高），只在极端比例处夹一下，
+    // 不再用固定的方形卡片，换任何比例的图片都不会被裁切或出现大面积留白。
+    val cardHeight = if (imageAspect != null && imageAspect > 0f) {
+        (cardWidth / imageAspect).coerceIn(40.dp, 168.dp)
     } else {
         cardWidth
     }

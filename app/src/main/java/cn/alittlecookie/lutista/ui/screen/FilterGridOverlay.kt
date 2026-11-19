@@ -26,8 +26,10 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -51,36 +53,98 @@ import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.icon.extended.Ok
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import kotlin.math.ceil
+import kotlin.math.floor
 
 /**
  * 整页平铺的三档密度。
  *
- * 三档必须同时改行数，只改列数没有意义：格子大小实际由"行高"决定，
- * 行数相同的两档会算出同样大的格子，只是列数少的看起来更小。
+ * 参照 Google 官方 Compose 的做法：
+ * - `GridCells.Adaptive(minSize)`：列数由可用宽度算出，而不是写死；
+ * - `Modifier.aspectRatio` + `ContentScale.Fit`：格子高度由照片真实宽高比算出，永不裁切。
+ * 密度只描述"目标格宽"和"最多几行"，实际列数、行数、每页个数都在运行时按屏幕与图片比例算出，
+ * 所以竖图、横图、方图、全景图都走同一套逻辑，换图不需要改代码。
  */
 enum class FilterGridDensity(
     val key: String,
     val label: String,
+    /** 最小列数（窄屏也至少这么多列） */
     val columns: Int,
-    val rows: Int,
-    /** 每页个数；为空时等于 columns × rows（小档为满足"每页 24 个"特意留最后一格空位） */
-    private val fixedPerPage: Int? = null,
+    /** 最多行数上限（行数实际由可用高度 ÷ 格子高度算出，这里只做上限） */
+    val maxRows: Int,
+    /** 目标格宽：按它算列数，手机上正好是 2/3/5 列，横屏或平板会自动增加列数 */
+    val minCellWidth: Dp,
     val gap: Dp,
     val corner: Dp,
     val labelSize: TextUnit,
     val labelHeight: Dp
 ) {
-    LARGE("large", "大", 2, 3, null, 10.dp, 14.dp, 12.sp, 20.dp),
-    MEDIUM("medium", "中", 3, 4, null, 8.dp, 12.dp, 11.sp, 18.dp),
-    SMALL("small", "小", 5, 5, 24, 6.dp, 10.dp, 10.sp, 16.dp);
+    LARGE("large", "大", 2, 6, 190.dp, 10.dp, 14.dp, 12.sp, 20.dp),
+    MEDIUM("medium", "中", 3, 8, 126.dp, 8.dp, 12.dp, 11.sp, 18.dp),
+    SMALL("small", "小", 5, 10, 72.dp, 6.dp, 10.dp, 10.sp, 16.dp);
 
-    val perPage: Int get() = fixedPerPage ?: (columns * rows)
+    /**
+     * 按真实可用空间 + 当前照片的真实宽高比，算出这一档的实际行列与格子尺寸。
+     *
+     * 1. 列数 = max(最小列数, 按目标格宽能放下的列数)；
+     * 2. 格子宽 = 列宽，格子高 = 宽 ÷ 照片比例（等价于 `Modifier.aspectRatio`）；
+     * 3. 行数 = 可用高度能放下的行数（四舍五入，受 [maxRows] 限制）；
+     * 4. 行高不够时整格等比缩小，所以永远是"完整图片 + 不裁切"。
+     */
+    fun metrics(
+        availWidth: Dp,
+        availHeight: Dp,
+        photoAspect: Float,
+        itemCount: Int = 0
+    ): FilterGridMetrics {
+        val aspect = if (photoAspect.isFinite() && photoAspect > 0f) photoAspect else 1f
+        val columnsFit = floor(((availWidth + gap) / (minCellWidth + gap)).toDouble()).toInt()
+        val actualColumns = maxOf(columns, columnsFit)
+        val cellWidth = ((availWidth - gap * (actualColumns - 1)) / actualColumns).coerceAtLeast(1.dp)
+        // 按列宽铺满时的自然高度，行数由"这个高度能在可用高度里放几个"决定
+        val naturalHeight = cellWidth / aspect
+        val slotHeight = naturalHeight + labelHeight + gap
+        val rowsFit = kotlin.math.round(((availHeight + gap) / slotHeight).toDouble()).toInt()
+        // 行数取"能放下的行数"与"装完当前列表需要的行数"的较小值，
+        // 否则列表很短时会算出一堆空行，整块被压到屏幕中间、上下大片留白
+        val rowsNeeded = if (itemCount > 0) {
+            ceil(itemCount.toDouble() / actualColumns).toInt()
+        } else {
+            rowsFit
+        }
+        val actualRows = minOf(rowsFit, rowsNeeded).coerceIn(1, maxRows)
+        val rowHeight = ((availHeight - gap * (actualRows - 1)) / actualRows).coerceAtLeast(1.dp)
+        val maxImageHeight = (rowHeight - labelHeight).coerceAtLeast(24.dp)
+        val imageHeight = minOf(naturalHeight, maxImageHeight)
+        val imageWidth = (imageHeight * aspect).coerceAtMost(cellWidth)
+        return FilterGridMetrics(
+            columns = actualColumns,
+            rows = actualRows,
+            perPage = actualColumns * actualRows,
+            cellWidth = cellWidth,
+            imageWidth = imageWidth,
+            imageHeight = imageHeight,
+            gap = gap,
+            labelHeight = labelHeight
+        )
+    }
 
     companion object {
         fun fromKey(key: String?): FilterGridDensity =
             entries.firstOrNull { it.key == key } ?: MEDIUM
     }
 }
+
+/** 一屏网格的实测几何：列/行、每页个数、格子与图片尺寸 */
+data class FilterGridMetrics(
+    val columns: Int,
+    val rows: Int,
+    val perPage: Int,
+    val cellWidth: Dp,
+    val imageWidth: Dp,
+    val imageHeight: Dp,
+    val gap: Dp,
+    val labelHeight: Dp
+)
 
 data class FilterGridItem(
     val id: Long,
@@ -128,9 +192,14 @@ fun FilterGridOverlay(
 ) {
     BackHandler { onDismiss() }
 
-    val perPage = density.perPage
+    val photoAspect = remember(original) {
+        original?.let { it.width.toFloat() / it.height.toFloat() }?.takeIf { it > 0f } ?: 1f
+    }
+    // 真实几何要等量到可用空间才能算出来（依赖屏幕尺寸 + 照片比例），先按密度的默认值占位
+    var metrics by remember(density) { mutableStateOf<FilterGridMetrics?>(null) }
+    val perPage = metrics?.perPage ?: (density.columns * 2)
     val pageCount = maxOf(1, ceil(items.size.toDouble() / perPage).toInt())
-    val initialPage = remember {
+    val initialPage = remember(density, perPage) {
         val index = items.indexOfFirst { it.id == selectedId }
         (if (index >= 0) index else 0) / perPage
     }
@@ -144,7 +213,7 @@ fun FilterGridOverlay(
     }
 
     // 当前页可见项优先渲染
-    LaunchedEffect(pagerState.currentPage, density) {
+    LaunchedEffect(pagerState.currentPage, perPage) {
         val start = pagerState.currentPage * perPage
         onVisibleIdsChanged(items.drop(start).take(perPage).map { it.id }.filter { it != 0L })
     }
@@ -158,27 +227,38 @@ fun FilterGridOverlay(
         FilterGridTopBar(
             count = items.size,
             density = density,
+            columns = metrics?.columns ?: density.columns,
+            rows = metrics?.rows ?: density.maxRows,
             onDensityChange = onDensityChange,
             onDismiss = onDismiss
         )
 
-        HorizontalPager(
-            state = pagerState,
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
-        ) { page ->
-            val start = page * perPage
-            val slice = (start until minOf(start + perPage, items.size)).map { items[it] }
-            FilterGridPage(
-                items = slice,
-                density = density,
-                selectedId = selectedId,
-                thumbnails = thumbnails,
-                loadingIds = loadingIds,
-                original = original,
-                onSelect = onSelect
-            )
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+        ) {
+            val current = density.metrics(maxWidth, maxHeight, photoAspect, items.size)
+            LaunchedEffect(current) { if (metrics != current) metrics = current }
+
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize()
+            ) { page ->
+                val start = page * current.perPage
+                val slice = (start until minOf(start + current.perPage, items.size)).map { items[it] }
+                FilterGridPage(
+                    metrics = current,
+                    items = slice,
+                    density = density,
+                    selectedId = selectedId,
+                    thumbnails = thumbnails,
+                    loadingIds = loadingIds,
+                    original = original,
+                    onSelect = onSelect
+                )
+            }
         }
 
         FilterGridBottomBar(
@@ -193,6 +273,8 @@ fun FilterGridOverlay(
 private fun FilterGridTopBar(
     count: Int,
     density: FilterGridDensity,
+    columns: Int,
+    rows: Int,
     onDensityChange: (FilterGridDensity) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -213,7 +295,7 @@ private fun FilterGridTopBar(
                 color = MiuixTheme.colorScheme.onSurface
             )
             Text(
-                text = "共 $count 个 · ${density.columns}×${density.rows}",
+                text = "共 $count 个 · ${columns}×${rows}",
                 fontSize = 11.sp,
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary
             )
@@ -253,6 +335,7 @@ private fun DensityPill(label: String, active: Boolean, onClick: () -> Unit) {
 
 @Composable
 private fun FilterGridPage(
+    metrics: FilterGridMetrics,
     items: List<FilterGridItem>,
     density: FilterGridDensity,
     selectedId: Long,
@@ -261,29 +344,18 @@ private fun FilterGridPage(
     original: Bitmap?,
     onSelect: (Long) -> Unit
 ) {
-    BoxWithConstraints(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 12.dp, vertical = 8.dp)
+    val rows = metrics.rows
+    val columns = metrics.columns
+    val gap = metrics.gap
+    val imageWidth = metrics.imageWidth
+    val imageHeight = metrics.imageHeight
+
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
     ) {
-        val rows = density.rows
-        val columns = density.columns
-        val gap = density.gap
-        val labelHeight = density.labelHeight
-
-        val cellWidth = (maxWidth - gap * (columns - 1)) / columns
-        val rowHeight = (maxHeight - gap * (rows - 1)) / rows
-        // 先把格子按原图比例算出来，再让格子本身等于图片尺寸：
-        // 行高不够时整格等比缩小，不在格子内部留白，选中框才能紧贴图片。
-        val maxImageHeight = (rowHeight - labelHeight).coerceAtLeast(24.dp)
-        val photoAspect = remember(original) {
-            original?.let { it.width.toFloat() / it.height.toFloat() }?.takeIf { it > 0f } ?: 1f
-        }
-        val imageHeight = minOf(cellWidth / photoAspect, maxImageHeight)
-        val imageWidth = (imageHeight * photoAspect).coerceAtMost(cellWidth)
-
         Column(
-            modifier = Modifier.align(Alignment.Center),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(gap)
         ) {
