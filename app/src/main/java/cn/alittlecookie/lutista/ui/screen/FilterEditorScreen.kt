@@ -395,10 +395,13 @@ fun FilterEditorScreen(
             )
 
             // ── 详情调节区域 (可滚动) ────────────────────────────
+            // 底部留一段安全余量：手势导航机型底下就是「返回/上滑」热区，
+            // 曲线工具最下面那个控制点如果贴到屏幕底边，一拖就会把关掉 App。
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(0.4f)
+                    .padding(bottom = 24.dp)
             ) {
                 when (EditorTab.entries[selectedTabIndex]) {
                     EditorTab.LUT -> LutTabContent(
