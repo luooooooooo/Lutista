@@ -6,6 +6,7 @@ import cn.alittlecookie.lutista.data.repository.FilterRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 
@@ -17,7 +18,12 @@ class BuiltinFilterManager(
 ) {
     companion object {
         private const val TAG = "BuiltinFilterManager"
-        const val CURRENT_BUILTIN_FILTER_VERSION = 1
+
+        /**
+         * 内置滤镜包版本。v2 起支持「cube + 同名 json」的完整配方（曲线 / LCH / 各项参数），
+         * 并新增内置滤镜「NC 人像优化」。老用户升级时靠这个版本号触发一次重新释放。
+         */
+        const val CURRENT_BUILTIN_FILTER_VERSION = 2
         private const val FILTERS_DIR = "filters"
         private const val ASSETS_FILTERS_DIR = "filters"
     }
@@ -25,7 +31,9 @@ class BuiltinFilterManager(
     data class ReleasedFilter(
         val name: String,
         val filterDir: File,
-        val lutFile: File
+        val lutFile: File,
+        /** 与 cube 同名的配方 json（可选），用于内置完整的曲线 / LCH / 参数 */
+        val configJson: File? = null
     )
 
     suspend fun initializeBuiltinFilters() = withContext(Dispatchers.IO) {
@@ -57,6 +65,9 @@ class BuiltinFilterManager(
             val assetFiles = context.assets.list(ASSETS_FILTERS_DIR) ?: emptyArray()
             logger.d(TAG, "Assets中的滤镜文件: ${assetFiles.joinToString()}")
 
+            // 与 cube 同名的 .json 是完整配方（曲线 / LCH / 各项参数），一起释放
+            val jsonAssets = assetFiles.filter { it.endsWith(".json", ignoreCase = true) }
+
             for (fileName in assetFiles) {
                 if (!fileName.endsWith(".cube", ignoreCase = true)) continue
 
@@ -71,14 +82,24 @@ class BuiltinFilterManager(
                     }
                 }
 
+                val jsonAsset = jsonAssets.firstOrNull { it.substringBeforeLast(".") == filterName }
+                val configFile = jsonAsset?.let { asset ->
+                    val dest = File(filterDir, asset)
+                    context.assets.open("$ASSETS_FILTERS_DIR/$asset").use { input ->
+                        FileOutputStream(dest).use { output -> input.copyTo(output) }
+                    }
+                    dest
+                }
+
                 releasedFilters.add(
                     ReleasedFilter(
                         name = filterName,
                         filterDir = filterDir,
-                        lutFile = destFile
+                        lutFile = destFile,
+                        configJson = configFile
                     )
                 )
-                logger.d(TAG, "释放滤镜: $filterName -> ${destFile.absolutePath}")
+                logger.d(TAG, "释放滤镜: $filterName -> ${destFile.absolutePath}${if (configFile != null) " (+配置)" else ""}")
             }
         } catch (e: Exception) {
             logger.e(TAG, "释放滤镜文件失败", e)
@@ -108,7 +129,35 @@ class BuiltinFilterManager(
                     updatedAt = System.currentTimeMillis()
                 )
 
-                filterRepository.insert(entity)
+                // 有同名 json 的滤镜带着完整配方（曲线 / LCH / 颗粒 / 基础参数），
+                // 不是只有一个 LUT，否则「内置」和用户导入后的效果会不一样。
+                val entityWithConfig = releasedFilter.configJson?.let { jsonFile ->
+                    runCatching {
+                        val json = JSONObject(jsonFile.readText())
+                        entity.copy(
+                            lutConcentration1 = json.optDouble("lutConcentration1", 1.0).toFloat(),
+                            lutConcentration2 = json.optDouble("lutConcentration2", 1.0).toFloat(),
+                            lutGlobalStrength = json.optDouble("lutGlobalStrength", 1.0).toFloat(),
+                            lutPrecision = json.optInt("lutPrecision", 33),
+                            exposure = json.optDouble("exposure", 0.0).toFloat(),
+                            contrast = json.optDouble("contrast", 0.0).toFloat(),
+                            highlights = json.optDouble("highlights", 0.0).toFloat(),
+                            shadows = json.optDouble("shadows", 0.0).toFloat(),
+                            saturation = json.optDouble("saturation", 0.0).toFloat(),
+                            colorTemperature = json.optDouble("colorTemperature", 0.0).toFloat(),
+                            tint = json.optDouble("tint", 0.0).toFloat(),
+                            curveJson = json.optString("curveJson", "{}"),
+                            lchJson = json.optString("lchJson", "{}"),
+                            vignetteStrength = json.optDouble("vignetteStrength", 0.0).toFloat(),
+                            grainJson = json.optString("grainJson", "{}")
+                        )
+                    }.getOrElse {
+                        logger.w(TAG, "内置滤镜配置解析失败，按纯 LUT 释放: ${releasedFilter.name}")
+                        entity
+                    }
+                } ?: entity
+
+                filterRepository.insert(entityWithConfig)
                 logger.d(TAG, "创建内置滤镜实体: ${releasedFilter.name}")
             } catch (e: Exception) {
                 logger.e(TAG, "创建滤镜实体失败: ${releasedFilter.name}", e)
@@ -118,13 +167,29 @@ class BuiltinFilterManager(
 
     private suspend fun deleteAllBuiltinFilters() {
         try {
-            val builtinFilters = filterRepository.getAllFilters().first()
-                .filter { it.isBuiltIn }
+            val allFilters = filterRepository.getAllFilters().first()
 
-            for (filter in builtinFilters) {
+            // 非内置配方（用户的精修备份 / 拷贝）可能仍然引用 filters 目录里的同一个 LUT 文件，
+            // 以前这里会把整个 filters 目录删掉，升级内置版本时这些配方就直接读不到 LUT 了。
+            // 现在只删没有任何非内置配方引用的目录。
+            val sharedDirs = allFilters
+                .filter { !it.isBuiltIn }
+                .flatMap { filter ->
+                    listOfNotNull(
+                        filter.filterDirPath,
+                        filter.lutPath1?.let { File(it).parent },
+                        filter.lutPath2?.let { File(it).parent }
+                    )
+                }
+                .map { File(it).absolutePath }
+                .toSet()
+
+            for (filter in allFilters.filter { it.isBuiltIn }) {
                 filter.filterDirPath?.let { dirPath ->
                     val dir = File(dirPath)
-                    if (dir.exists()) {
+                    if (sharedDirs.contains(dir.absolutePath)) {
+                        logger.d(TAG, "目录仍被非内置配方引用，保留: $dirPath")
+                    } else if (dir.exists()) {
                         dir.deleteRecursively()
                         logger.d(TAG, "删除滤镜目录: $dirPath")
                     }
@@ -132,13 +197,7 @@ class BuiltinFilterManager(
                 filterRepository.delete(filter)
             }
 
-            val filtersBaseDir = File(context.filesDir, FILTERS_DIR)
-            if (filtersBaseDir.exists()) {
-                filtersBaseDir.deleteRecursively()
-                filtersBaseDir.mkdirs()
-            }
-
-            logger.i(TAG, "已删除所有内置滤镜")
+            logger.i(TAG, "已删除所有内置滤镜（保留被引用目录）")
         } catch (e: Exception) {
             logger.e(TAG, "删除内置滤镜失败", e)
         }

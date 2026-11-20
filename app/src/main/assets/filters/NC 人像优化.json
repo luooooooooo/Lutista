@@ -1,0 +1,19 @@
+{
+  "name": "NC 人像优化",
+  "version": 1,
+  "lutConcentration1": 1,
+  "lutConcentration2": 1,
+  "lutGlobalStrength": 1,
+  "lutPrecision": 33,
+  "exposure": 0,
+  "contrast": 0,
+  "highlights": 0,
+  "shadows": 0,
+  "saturation": 0,
+  "colorTemperature": 0,
+  "tint": 0,
+  "curveJson": "{\"w\":[{\"x\":0,\"y\":0.011373758316040039},{\"x\":0.4223335087299347,\"y\":0.5063278079032898},{\"x\":1,\"y\":0.9737353324890137}],\"r\":[],\"g\":[],\"b\":[]}",
+  "lchJson": "{\"red\":{\"l\":0,\"c\":0,\"h\":0},\"orange\":{\"l\":19.656333923339844,\"c\":-0.085052490234375,\"h\":0},\"yellow\":{\"l\":0,\"c\":0,\"h\":0},\"green\":{\"l\":0,\"c\":0,\"h\":0},\"cyan\":{\"l\":0,\"c\":0,\"h\":0},\"blue\":{\"l\":0,\"c\":0,\"h\":0},\"purple\":{\"l\":0,\"c\":0,\"h\":0},\"skin\":{\"l\":0,\"c\":0,\"h\":0}}",
+  "vignetteStrength": 0,
+  "grainJson": "{}"
+}
