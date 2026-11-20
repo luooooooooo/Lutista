@@ -31,4 +31,11 @@ class FilterRepository(
         filterDao.updateUnifiedLut(id, path, hash)
 
     suspend fun updateTimestamp(id: Long) = filterDao.updateTimestamp(id)
+
+    /** 按传入的 id 顺序重排：第 i 个写入 sortOrder = i。只改排序位。 */
+    suspend fun applySortOrder(orderedIds: List<Long>) {
+        orderedIds.forEachIndexed { index, id ->
+            filterDao.updateSortOrder(id, index)
+        }
+    }
 }

@@ -160,6 +160,21 @@ gradle :app:assembleDebug -Pandroid.injected.build.abi=arm64-v8a
 
 ## 四、版本更新记录
 
+### v1.3.7 · 2026-11-20
+
+**修复：配方库拖拽排序不持久 / 单图预览不跟随自定义顺序**
+- 根因：排序落库用的是 `snapshotFlow { ids }.collectLatest { delay(600); 逐条写 }`，而每写一条都会触发 Room 回流 → `remember(filtersFromDb)` 重建列表 → 再次发射相同 ids → `collectLatest` 把正在写的协程取消。写循环永远写到一半就被自己打断，只有前几条落库，重启后顺序自然退回默认；单图页读的是同一张表的 `sortOrder`，所以也跟着"不生效"。
+- 现在：本地列表是顺序的唯一真相；数据库回流只同步增删 / 改名 / 启用状态，**不再重排**本地列表；拖拽结束后 400ms 防抖一次 `applySortOrder(ids)`，按序写 `sortOrder = 0..n-1`。
+- 新增 `FilterDao.updateSortOrder` / `WatermarkDao.updateSortOrder` 与仓库层 `applySortOrder`：只改排序位，**不动 `updatedAt`**（否则拖一下就把配方解析缓存全失效）。
+- 单图备份（"· 单图备份 / · 精修"）仍强制排在末尾，拖到中间会被弹回，不会混进常用滤镜。
+
+**修复：release 包带 `android:testOnly="true"`，真机普通安装被拒**
+- 之前用 `-Pandroid.injected.build.abi` 做单 ABI 构建，这是 Studio 的注入式参数，AGP 会在 manifest 里写上 `android:testOnly="true"`，`adb install` 必须带 `-t`，手机/小米安装器则直接判失败。
+- 改用自定义 `-PtargetAbi=arm64-v8a` 控制 ABI，并在 manifest 里显式 `android:testOnly="false"` + `tools:replace`。v1.3.6 的安装包就有这个问题。
+
+**说明**
+- 版本号 `1.3.6` → `1.3.7`（versionCode 10 → 11）；签名不变，可覆盖升级 v1.3.6。
+
 ### v1.3.6 · 2026-11-20
 
 **改为正式签名 + release 构建**
@@ -325,6 +340,20 @@ gradle :app:assembleDebug -Pandroid.injected.build.abi=arm64-v8a
 | 选中框贴合 | 格子尺寸等于图片尺寸，选中描边紧贴图片四边；宽屏 + 小档 4×6 时行高受限，整块等比缩小后紧凑居中，格子内部无左右留白 |
 | 长按查看原图 | 长按后显示无滤镜原图、松手回到滤镜效果，两个状态都是完整画面，过程中不再出现空白帧 |
 | 竖构图照片复查 | 1200×1600 竖构图照片在竖屏下三档实测：大档 2×3（格子最大、4 页）、中档 3×4（2 页）、小档 4×5（每页 20 个、基本铺满屏宽），图片比例与原始一致、无裁切，选中框紧贴图片 |
+
+### 验证记录（v1.3.7）
+
+MuMu 模拟器（Android 15，x86_64；验证完已把 CMake 还原为 arm64-only）。为了让"拖拽只写了一半"这类问题可复现，验证时临时在 `persistOrder` 里落盘日志（`files/order_debug.txt`），验完已删除：
+
+| 验证项 | 结果 |
+|---|---|
+| 拖拽触发落库 | 日志：`onMove 18 -> 16` … `persist run ids=[1,2,3,4,5,6,7,8,9,10,17,19,18,11,12,13,14,15,16,20,21]` → `persist done`，一次写完整表 |
+| 数据库生效 | 直接读 `databases/Lutista.db`：`sortOrder` 已按拖拽结果重排（NC 人像优化 18 → 11，JC-Negative 17 → 10，JC-Positive 18 → 12） |
+| 重启保持 | force-stop 后重进配方室，滚动确认顺序为 `…Fuji-REALA → JC-Negative → NC 人像优化 → JC-Positive`，与数据库一致 |
+| 单图页跟随 | 单图精修底部横排同段顺序一致：`Fuji-PROVIA → Fuji-REALA → JC-Negative → NC 人像优化 → JC-Positive` |
+| 安装包 | versionCode 11 / versionName 1.3.7；`testOnly=false`；v2 签名 `CN=Lutista Local`；arm64-v8a 12,453,334 字节；22 个滤镜资产、`unified.comp.spv` 23,276 B |
+| 安装方式 | 不带 `-t` 的 `adb install -r` 直接成功（v1.3.6 的包会 `INSTALL_FAILED_TEST_ONLY`） |
+| 单元测试 | `:app:testDebugUnitTest` 56 个全绿 |
 
 ### 验证记录（v1.3.6）
 

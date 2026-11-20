@@ -1,6 +1,7 @@
 package cn.alittlecookie.lutista.ui.screen
 
 import android.content.Context
+import android.util.Log
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -34,7 +35,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -64,8 +65,8 @@ import cn.alittlecookie.lutista.watermark.model.BaseImageElement
 import cn.alittlecookie.lutista.watermark.model.Scene
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -167,60 +168,43 @@ fun RecipeRoomScreen(
     val filtersFromDb by filterRepository.getAllFilters().collectAsState(initial = emptyList())
     val watermarksFromDb by watermarkRepository.getAllWatermarks().collectAsState(initial = emptyList())
 
-    val filters = remember(filtersFromDb) {
-        mutableStateListOf<RecipeItem>().apply {
-            clear()
-            // 单图备份统一排到最后，配合列表里的分组标题，不会混在常用配方中间
-            val ordered = filtersFromDb.sortedBy { if (it.isPhotoBackup) 1 else 0 }
-            addAll(ordered.map { entity ->
-                RecipeItem(
-                    id = entity.id,
-                    name = entity.name,
-                    isEnabled = entity.isEnabled,
-                    type = RecipeTab.FILTER,
-                    isBuiltIn = entity.isBuiltIn
-                )
-            })
-        }
+    // 本地列表是「顺序」的唯一真相：拖拽先改本地、再落库；数据库回流只用来同步
+    // 增删 / 改名 / 启用状态，绝不重排本地列表。
+    // 之前的写法是 remember(filtersFromDb) 每次数据库变化就整表重建 + snapshotFlow 防抖写库，
+    // 而写库本身又会让数据库回流、重建列表、取消防抖协程 —— 结果只有前几项写进去了，
+    // 重启后顺序退回默认。
+    val filters = remember { mutableStateListOf<RecipeItem>() }
+    val watermarks = remember { mutableStateListOf<RecipeItem>() }
+
+    LaunchedEffect(filtersFromDb) {
+        syncRecipeItems(
+            filters,
+            filtersFromDb.map {
+                RecipeItem(it.id, it.name, it.isEnabled, RecipeTab.FILTER, it.isBuiltIn)
+            }
+        )
+    }
+    LaunchedEffect(watermarksFromDb) {
+        syncRecipeItems(
+            watermarks,
+            watermarksFromDb.map {
+                RecipeItem(it.id, it.name, it.isEnabled, RecipeTab.WATERMARK)
+            },
+            isBackup = { false }
+        )
     }
 
-    val watermarks = remember(watermarksFromDb) {
-        mutableStateListOf<RecipeItem>().apply {
-            clear()
-            addAll(watermarksFromDb.map { entity ->
-                RecipeItem(
-                    id = entity.id,
-                    name = entity.name,
-                    isEnabled = entity.isEnabled,
-                    type = RecipeTab.WATERMARK,
-                    isBuiltIn = false
-                )
-            })
+    // 拖拽结束后落库：只写排序位（不动 updatedAt），并把单图备份统一压到末尾
+    var saveJob by remember { mutableStateOf<Job?>(null) }
+    fun persistOrder(isWatermark: Boolean) {
+        saveJob?.cancel()
+        saveJob = scope.launch {
+            delay(400)
+            runCatching {
+                if (isWatermark) watermarkRepository.applySortOrder(watermarks.map { it.id })
+                else filterRepository.applySortOrder(filters.filterNot { isPhotoBackupName(it.name) }.map { it.id })
+            }
         }
-    }
-
-    // Debounced persistence: save sort order 500ms after last reorder
-    LaunchedEffect(Unit) {
-        snapshotFlow { filters.map { it.id } }
-            .collectLatest { ids ->
-                delay(600)
-                ids.forEachIndexed { i, id ->
-                    filterRepository.getFilterById(id)?.let {
-                        filterRepository.update(it.copy(sortOrder = i))
-                    }
-                }
-            }
-    }
-    LaunchedEffect(Unit) {
-        snapshotFlow { watermarks.map { it.id } }
-            .collectLatest { ids ->
-                delay(600)
-                ids.forEachIndexed { i, id ->
-                    watermarkRepository.getWatermarkById(id)?.let {
-                        watermarkRepository.update(it.copy(sortOrder = i))
-                    }
-                }
-            }
     }
 
     val currentList = if (selectedSubTab == 0) filters else watermarks
@@ -347,9 +331,13 @@ fun RecipeRoomScreen(
                     if (selectedSubTab == 0) {
                         val item = filters.removeAt(from.index)
                         filters.add(to.index, item)
+                        // 单图备份是自动产生的临时副本，不允许混进常用滤镜中间
+                        normalizeBackupTail(filters)
+                        persistOrder(isWatermark = false)
                     } else {
                         val item = watermarks.removeAt(from.index)
                         watermarks.add(to.index, item)
+                        persistOrder(isWatermark = true)
                     }
                 },
                 onEditClick = { item ->
@@ -839,9 +827,48 @@ private suspend fun importWatermarkPackage(
     }
 }
 
+/**
+ * 把数据库回流合并进本地列表：
+ * - 只在「集合」变化时增删，已有项只更新字段，保持用户拖好的相对顺序；
+ * - 单图备份统一压到末尾。
+ */
+private fun syncRecipeItems(
+    target: SnapshotStateList<RecipeItem>,
+    dbItems: List<RecipeItem>,
+    isBackup: (String) -> Boolean = { isPhotoBackupName(it) }
+) {
+    val byId = dbItems.associateBy { it.id }
+
+    target.removeAll { it.id !in byId }
+    for (i in target.indices) {
+        byId[target[i].id]?.let { target[i] = it }
+    }
+    dbItems.forEach { entity ->
+        if (target.none { it.id == entity.id }) target.add(byId.getValue(entity.id))
+    }
+
+    normalizeBackupTail(target, isBackup)
+}
+
+/** 把备份类条目挪到列表末尾，其余保持原顺序 */
+private fun normalizeBackupTail(
+    target: MutableList<RecipeItem>,
+    isBackup: (String) -> Boolean = { isPhotoBackupName(it) }
+) {
+    val firstBackup = target.indexOfFirst { isBackup(it.name) }
+    if (firstBackup < 0) return
+    // 已经从第一份备份开始一路到底都是备份，就没必要动
+    if (target.drop(firstBackup).all { isBackup(it.name) }) return
+
+    val others = target.filterNot { isBackup(it.name) }
+    val backups = target.filter { isBackup(it.name) }
+    target.clear()
+    target.addAll(others)
+    target.addAll(backups)
+}
+
 @Composable
-private fun RecipeList(
-    items: List<RecipeItem>,
+private fun RecipeList(    items: List<RecipeItem>,
     isWatermarkTab: Boolean,
     onMove: suspend CoroutineScope.(from: LazyListItemInfo, to: LazyListItemInfo) -> Unit,
     onEditClick: (RecipeItem) -> Unit,

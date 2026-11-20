@@ -35,4 +35,7 @@ interface WatermarkDao {
 
     @Query("DELETE FROM watermarks WHERE id = :id")
     suspend fun deleteById(id: Long)
+
+    @Query("UPDATE watermarks SET sortOrder = :sortOrder WHERE id = :id")
+    suspend fun updateSortOrder(id: Long, sortOrder: Int)
 }

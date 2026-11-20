@@ -21,13 +21,21 @@ android {
         applicationId = "cn.alittlecookie.lutista"
         minSdk = 29
         targetSdk = 37
-        versionCode = 10
-        versionName = "1.3.6"
+        versionCode = 11
+        versionName = "1.3.7"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
-            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            // 单 ABI 构建用 -PtargetAbi=arm64-v8a 指定。
+            // 不要用 -Pandroid.injected.build.abi：那是 Studio 的注入式构建参数，
+            // 会让 AGP 在 manifest 里写上 android:testOnly="true"，真机普通安装会被拒。
+            val targetAbi = (findProperty("targetAbi") as String?)?.takeIf { it.isNotBlank() }
+            abiFilters += if (targetAbi != null) {
+                listOf(targetAbi)
+            } else {
+                listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            }
         }
 
         externalNativeBuild {

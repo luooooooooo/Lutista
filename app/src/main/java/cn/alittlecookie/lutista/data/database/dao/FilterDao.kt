@@ -48,6 +48,10 @@ interface FilterDao {
     @Query("UPDATE filters SET updatedAt = :timestamp WHERE id = :id")
     suspend fun updateTimestamp(id: Long, timestamp: Long = System.currentTimeMillis())
 
+    /** 只改排序位，不碰 updatedAt，避免拖一下顺序就把配方缓存的解析结果全失效 */
+    @Query("UPDATE filters SET sortOrder = :sortOrder WHERE id = :id")
+    suspend fun updateSortOrder(id: Long, sortOrder: Int)
+
     @Query("SELECT * FROM filters WHERE isBuiltIn = 1 ORDER BY name ASC")
     fun getBuiltinFilters(): Flow<List<FilterEntity>>
 

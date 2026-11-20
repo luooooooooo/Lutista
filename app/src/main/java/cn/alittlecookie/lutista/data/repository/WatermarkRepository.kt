@@ -26,6 +26,13 @@ class WatermarkRepository(
 
     suspend fun deleteById(id: Long) = watermarkDao.deleteById(id)
 
+    /** 按传入的 id 顺序重排：第 i 个写入 sortOrder = i。只改排序位。 */
+    suspend fun applySortOrder(orderedIds: List<Long>) {
+        orderedIds.forEachIndexed { index, id ->
+            watermarkDao.updateSortOrder(id, index)
+        }
+    }
+
     fun deserializeScene(entity: WatermarkEntity): Scene {
         return try {
             SceneSerializer.fromJson(entity.configJson)
