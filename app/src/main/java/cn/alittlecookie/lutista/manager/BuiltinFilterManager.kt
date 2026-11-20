@@ -22,10 +22,14 @@ class BuiltinFilterManager(
         /**
          * 内置滤镜包版本。v2 起支持「cube + 同名 json」的完整配方（曲线 / LCH / 各项参数），
          * 并新增内置滤镜「NC 人像优化」。老用户升级时靠这个版本号触发一次重新释放。
+         * v3：NC 人像优化曝光改为 +0.5 EV，并固定排在默认顺序的第一位。
          */
-        const val CURRENT_BUILTIN_FILTER_VERSION = 2
+        const val CURRENT_BUILTIN_FILTER_VERSION = 3
         private const val FILTERS_DIR = "filters"
         private const val ASSETS_FILTERS_DIR = "filters"
+
+        /** 默认顺序里固定排在最前面的内置滤镜（按列表顺序），其余仍按名称字母序。 */
+        private val PINNED_FIRST = listOf("NC 人像优化")
     }
 
     data class ReleasedFilter(
@@ -108,8 +112,22 @@ class BuiltinFilterManager(
         releasedFilters
     }
 
+    /**
+     * 默认顺序：先放 [PINNED_FIRST] 里点名的滤镜（按点名的先后），其余按名称字母序。
+     * 这样「NC 人像优化」在配方库、单图底部横排、整页平铺里都是第一个。
+     */
+    private fun defaultOrder(releasedFilters: List<ReleasedFilter>): List<ReleasedFilter> {
+        val pinned = PINNED_FIRST.mapNotNull { name ->
+            releasedFilters.firstOrNull { it.name == name }
+        }
+        val rest = releasedFilters
+            .filterNot { it.name in PINNED_FIRST }
+            .sortedBy { it.name.lowercase() }
+        return pinned + rest
+    }
+
     private suspend fun createBuiltinFilterEntities(releasedFilters: List<ReleasedFilter>) {
-        val sorted = releasedFilters.sortedBy { it.name.lowercase() }
+        val sorted = defaultOrder(releasedFilters)
         for ((index, releasedFilter) in sorted.withIndex()) {
             try {
                 val existingFilter = filterRepository.getFilterByName(releasedFilter.name)
