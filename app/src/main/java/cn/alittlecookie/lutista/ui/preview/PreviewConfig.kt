@@ -2,27 +2,13 @@ package cn.alittlecookie.lutista.ui.preview
 
 import cn.alittlecookie.lutista.data.database.entity.FilterEntity
 import cn.alittlecookie.lutista.data.model.FilterConfig
+import cn.alittlecookie.lutista.data.model.toFilterConfig
 
 /**
  * 预览/缩略图共用的一套 FilterConfig 映射。
  *
- * 只取渲染预览真正会用到的基础字段，与 PhotoProcessScreen 里原有的大图预览保持完全一致，
- * 避免"底部缩略图"和"主预览"出现口径不同的颜色。
+ * 这里必须和主预览用同一套完整参数（全局 LUT 浓度、曲线、LCH、颗粒、统一 LUT 等），
+ * 否则在配方室里调了这些参数保存后，主预览变了、底部缩略图却还是老样子，
+ * 看起来就像"缩略图没有刷新"。
  */
-fun FilterEntity.toPreviewFilterConfig(): FilterConfig = FilterConfig(
-    id = id,
-    name = name,
-    lutPath1 = lutPath1,
-    lutConcentration1 = lutConcentration1,
-    lutPath2 = lutPath2,
-    lutConcentration2 = lutConcentration2,
-    lutPrecision = lutPrecision,
-    exposure = exposure,
-    contrast = contrast,
-    highlights = highlights,
-    shadows = shadows,
-    saturation = saturation,
-    colorTemperature = colorTemperature,
-    tint = tint,
-    vignetteStrength = vignetteStrength
-)
+fun FilterEntity.toPreviewFilterConfig(): FilterConfig = toFilterConfig()

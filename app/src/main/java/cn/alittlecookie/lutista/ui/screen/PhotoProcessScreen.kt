@@ -304,15 +304,27 @@ fun PhotoProcessScreen(
     }
 
     // 日常选滤镜用的列表：单图备份不进底部横排和整页平铺，免得把常用滤镜挤下去
-    val selectableFilters = remember(filtersFromDb) {
-        filtersFromDb.filterNot { it.isPhotoBackup }
+    // 例外：当前照片正在用的那份精修副本，要作为一张「精修」卡片显示出来，
+    // 否则改完参数后横排没有任何卡片能反映调整后的效果，也看不出当前选的是哪一项。
+    val currentFilterId = getCurrentSettings().filterId
+    val selectableFilters = remember(filtersFromDb, currentFilterId) {
+        val base = filtersFromDb.filterNot { it.isPhotoBackup }
+        val backup = filtersFromDb.find { it.id == currentFilterId && it.isPhotoBackup } ?: return@remember base
+        val sourceName = backup.name.substringBefore(PHOTO_BACKUP_SUFFIX)
+        val insertAt = base.indexOfFirst { it.name == sourceName }.let { if (it >= 0) it + 1 else 0 }
+        base.toMutableList().apply { add(insertAt, backup) }
     }
 
     val filterOptions = remember(selectableFilters) {
         buildList {
             add(FilterOption(0, "原图", null))
             addAll(selectableFilters.map { filter ->
-                FilterOption(filter.id, filter.name, null)
+                val label = if (filter.isPhotoBackup) {
+                    "${filter.name.substringBefore(PHOTO_BACKUP_SUFFIX)} · 精修"
+                } else {
+                    filter.name
+                }
+                FilterOption(filter.id, label, null)
             })
         }
     }

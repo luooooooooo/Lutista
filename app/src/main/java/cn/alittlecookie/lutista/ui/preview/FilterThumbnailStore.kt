@@ -81,6 +81,13 @@ class FilterThumbnailStore(
     private val desired = LinkedHashMap<Long, Int>()
     private val entities = HashMap<Long, FilterEntity>()
 
+    /**
+     * filterId -> 生成当前这份缩略图时用的滤镜参数指纹（[FilterEntity.hashCode]）。
+     * 在配方室里改完参数保存后，指纹会变，缓存随之作废重渲，
+     * 否则底部横排/整页平铺会一直显示改动前的旧图。
+     */
+    private val signatures = HashMap<Long, Int>()
+
     private val cache = LinkedHashMap<Long, Bitmap>(16, 0.75f, true)
     private var cacheBytes = 0L
 
@@ -128,19 +135,38 @@ class FilterThumbnailStore(
         }
     }
 
-    /** 更新期望队列：可见的先渲，其余按顺序补 */
+    /** 更新期望队列：可见的先渲，其余按顺序补；参数变过的滤镜当场作废旧图重渲 */
     fun request(filters: List<FilterEntity>, priority: Int) {
         if (filters.isEmpty()) return
         val toAdd = ArrayList<Long>(filters.size)
+        val stale = ArrayList<Long>()
         synchronized(lock) {
             for (f in filters) {
                 if (f.id == 0L) continue
-                entities[f.id] = f
-                val old = desired[f.id]
-                if (old == null || old > priority) {
+                val signature = f.hashCode()
+                val previous = signatures.put(f.id, signature)
+                if (previous != null && previous != signature) {
+                    // 同一个滤镜的参数被改过：丢掉现有缩略图，重新排队
+                    stale.add(f.id)
+                    val removed = cache.remove(f.id)
+                    if (removed != null) cacheBytes -= removed.allocationByteCount.toLong()
                     desired[f.id] = priority
                     toAdd.add(f.id)
+                } else {
+                    val old = desired[f.id]
+                    if (old == null || old > priority) {
+                        desired[f.id] = priority
+                        toAdd.add(f.id)
+                    }
                 }
+                entities[f.id] = f
+            }
+        }
+        // 状态表在 Compose 侧，放到锁外清，避免持锁改 snapshot state
+        if (stale.isNotEmpty()) {
+            stale.forEach {
+                thumbnails.remove(it)
+                loading.remove(it)
             }
         }
         if (toAdd.isNotEmpty()) wake.trySend(Unit)
@@ -162,6 +188,7 @@ class FilterThumbnailStore(
         thumbnails.remove(filterId)
         loading.remove(filterId)
         synchronized(lock) {
+            signatures.remove(filterId)
             val removed = cache.remove(filterId)
             if (removed != null) cacheBytes -= removed.allocationByteCount.toLong()
         }
@@ -272,6 +299,7 @@ class FilterThumbnailStore(
         if (synchronized(lock) { cache.containsKey(filterId) }) return
 
         val gen = generation
+        val signature = synchronized(lock) { signatures[filterId] }
         withStateUpdate { loading[filterId] = true }
         try {
             val config = entity.toPreviewFilterConfig()
@@ -283,6 +311,12 @@ class FilterThumbnailStore(
                 return
             }
             if (gen != generation) {
+                result.recycle()
+                return
+            }
+            // 渲染期间该滤镜又被改过：这份结果是旧参数出来的，直接丢弃
+            val latestSignature = synchronized(lock) { signatures[filterId] }
+            if (signature != null && latestSignature != signature) {
                 result.recycle()
                 return
             }
