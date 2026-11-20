@@ -240,6 +240,28 @@ class ImageProcessingEngine(
         return lut
     }
 
+    /**
+     * 确定性的颗粒种子。
+     *
+     * 原来用 `System.currentTimeMillis() % 1000`，等于每帧换一次种子：拖任何滑杆时颗粒都在
+     * "沸腾"，预览和全分辨率导出也永远对不上。这里只从**空间**参数派生种子，保证
+     * （a）预览与导出颗粒图案一致，（b）只改强度类参数不会把图案重新洗牌。
+     */
+    private fun grainSeed(grain: cn.alittlecookie.lutista.data.model.GrainConfig): Float {
+        var h = grain.grainSize.hashCode()
+        h = 31 * h + grain.shadowSizeRatio.hashCode()
+        h = 31 * h + grain.midtoneSizeRatio.hashCode()
+        h = 31 * h + grain.highlightSizeRatio.hashCode()
+        h = 31 * h + grain.shadowThreshold.hashCode()
+        h = 31 * h + grain.highlightThreshold.hashCode()
+        h = 31 * h + grain.redChannelRatio.hashCode()
+        h = 31 * h + grain.blueChannelRatio.hashCode()
+        h = 31 * h + grain.channelCorrelation.hashCode()
+        h = 31 * h + grain.colorPreservation.hashCode()
+        // 用 and 0x7FFFFFFF 而不是 Math.abs：Int.MIN_VALUE 取绝对值还是负数
+        return ((h and 0x7FFFFFFF) % 1000).toFloat() / 1000f
+    }
+
     private fun buildGpuParams(filter: FilterConfig): FloatArray {
         val params = FloatArray(57)
         var idx = 0
@@ -257,7 +279,7 @@ class ImageProcessingEngine(
         params[idx++] = filter.tint
         params[idx++] = filter.vignetteStrength
         params[idx++] = filter.grainConfig.globalStrength
-        params[idx++] = (System.currentTimeMillis() % 1000).toFloat() / 1000f
+        params[idx++] = grainSeed(filter.grainConfig)
         params[idx++] = filter.grainConfig.shadowThreshold / 255f
         params[idx++] = filter.grainConfig.highlightThreshold / 255f
         params[idx++] = filter.grainConfig.shadowGrainRatio

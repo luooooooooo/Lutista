@@ -15,6 +15,14 @@ if(ANDROID_ABI STREQUAL "arm64-v8a")
     endif()
 
     # glslc path: prefer Gradle-passed ANDROID_NDK, then fall back to toolchain
+    # Gradle 有时不传 ANDROID_HOST_PREBUILT_TAG，此时按宿主平台给出默认值，避免静默跳过 shader 编译
+    if(NOT DEFINED ANDROID_HOST_PREBUILT_TAG OR ANDROID_HOST_PREBUILT_TAG STREQUAL "")
+        if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Windows")
+            set(ANDROID_HOST_PREBUILT_TAG "windows-x86_64")
+        else()
+            set(ANDROID_HOST_PREBUILT_TAG "linux-x86_64")
+        endif()
+    endif()
     if(DEFINED ANDROID_NDK AND NOT ANDROID_NDK STREQUAL "")
         set(GLSLC "${ANDROID_NDK}/shader-tools/${ANDROID_HOST_PREBUILT_TAG}/glslc${_GLSLC_EXT}")
     else()

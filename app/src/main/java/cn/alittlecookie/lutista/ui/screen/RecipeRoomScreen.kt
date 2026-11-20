@@ -698,6 +698,7 @@ private suspend fun importFilterPackage(
                 lutPath2 = lut2Path,
                 lutConcentration2 = json.optDouble("lutConcentration2", 1.0).toFloat(),
                 lutPrecision = json.optInt("lutPrecision", 33),
+                lutGlobalStrength = json.optDouble("lutGlobalStrength", 1.0).toFloat(),
                 exposure = json.optDouble("exposure", 0.0).toFloat(),
                 contrast = json.optDouble("contrast", 0.0).toFloat(),
                 highlights = json.optDouble("highlights", 0.0).toFloat(),

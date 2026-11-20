@@ -191,6 +191,7 @@ class BuiltinFilterManager(
             lutConcentration1 = filter.lutConcentration1,
             lutPath2 = filter.lutPath2,
             lutConcentration2 = filter.lutConcentration2,
+            lutGlobalStrength = filter.lutGlobalStrength,
             lutPrecision = filter.lutPrecision,
             exposure = filter.exposure,
             contrast = filter.contrast,

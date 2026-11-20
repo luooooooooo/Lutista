@@ -12,8 +12,8 @@ android {
         applicationId = "cn.alittlecookie.lutista"
         minSdk = 29
         targetSdk = 37
-        versionCode = 7
-        versionName = "1.3.3"
+        versionCode = 8
+        versionName = "1.3.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -47,6 +47,12 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+
+    // 单元测试跑在纯 JVM 上，android.util.Log 之类的桩方法默认会抛
+    // "Method d in android.util.Log not mocked"，这里让它们返回默认值。
+    testOptions {
+        unitTests.isReturnDefaultValues = true
     }
 
     packaging {
