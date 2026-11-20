@@ -158,6 +158,19 @@ gradle :app:assembleDebug -Pandroid.injected.build.abi=arm64-v8a
 
 ## 四、版本更新记录
 
+### v1.3.6 · 2026-11-20
+
+**改为正式签名 + release 构建**
+- 新增固定发布证书（`D:\ai\_keys\lutista-release.jks`，别名 `lutista`，RSA-2048，有效期 30 年），`keystore.properties` 放在仓库根目录并已 gitignore，Gradle 里按需读取；没有这个文件时自动退化为未签名构建，不影响别人克隆编译。
+- 首次产出 **release** 包：`isMinifyEnabled` / `isShrinkResources` 都在开，R8 混淆 + 资源裁剪后 **94,729,315 → 12,476,710 字节**（−87%），`debuggable` 已去掉。之前分发的都是 debug 包，`CN=Android Debug` 证书 + 可调试标记容易被手机管家标成"测试/风险应用"。
+- 装包不再需要 `-t`（`adb install -r` 即可覆盖同签名的旧版）。
+
+**升级注意**
+- 签名换了，**从旧 debug 包升级必须先卸载**，否则报"应用未安装 / 签名不一致"；卸载会清掉配方与内置滤镜缓存，重装后自动重新释放。
+
+**说明**
+- 版本号 `1.3.5` → `1.3.6`（versionCode 9 → 10）；代码逻辑与 1.3.5 完全一致，只是签名与构建类型。
+
 ### v1.3.5 · 2026-11-20
 
 **新增：内置滤镜「NC 人像优化」**
@@ -310,6 +323,22 @@ gradle :app:assembleDebug -Pandroid.injected.build.abi=arm64-v8a
 | 选中框贴合 | 格子尺寸等于图片尺寸，选中描边紧贴图片四边；宽屏 + 小档 4×6 时行高受限，整块等比缩小后紧凑居中，格子内部无左右留白 |
 | 长按查看原图 | 长按后显示无滤镜原图、松手回到滤镜效果，两个状态都是完整画面，过程中不再出现空白帧 |
 | 竖构图照片复查 | 1200×1600 竖构图照片在竖屏下三档实测：大档 2×3（格子最大、4 页）、中档 3×4（2 页）、小档 4×5（每页 20 个、基本铺满屏宽），图片比例与原始一致、无裁切，选中框紧贴图片 |
+
+### 验证记录（v1.3.6）
+
+MuMu 模拟器（Android 15），专门验 R8 混淆后的 release 包（debug 包不具备参考性）：先 `adb uninstall` 卸掉旧 debug 包，再装 x86_64 release 包（CMake 临时放开 x86_64，验完已还原 arm64-only）：
+
+| 验证项 | 结果 |
+|---|---|
+| 安装 | `adb install -r` 成功（release 包不需要 `-t`），无签名冲突 |
+| 启动 / 首页 | 冷启动正常，Koin 注入、Room 数据库、首页布局与数据绑定均无异常（R8 未破坏反射相关路径） |
+| 权限弹窗 | 首次启动正常弹出通知 / 相册权限，授权后进入主页 |
+| 内置滤镜 | 全新安装（`builtinFilterVersion = 0 < 2`）自动释放，底部横排出现 `NC 人像优化` 且缩略图渲染成功 |
+| 滤镜应用 / 预览 | 选中 `NC 人像优化` 后整幅色块图正常渲染，标签显示"已单独设置效果"，logcat 无 FATAL |
+| 导出 | 点"开始处理"→"处理完成 / 已成功处理 1 张"，`/sdcard/Pictures/Lutista/1000000145-NC 人像优化.jpg` 落盘（11,704 B） |
+| 签名 | `apksigner verify`：仅 v2 方案通过，证书 `CN=Lutista Local`，SHA-256 `754a83a4…df7721c`；`aapt2 dump badging` 无 `debuggable` |
+| 体积 | arm64-v8a release 12,476,710 字节（debug 包 94,729,315 字节） |
+| 包内容 | 22 个滤镜资产、`unified.comp.spv` 23,276 B、`libvulkan_engine.so` 仅 `arm64-v8a` |
 
 ### 验证记录（v1.3.5）
 

@@ -22,3 +22,6 @@ local.properties
 /app/release/
 /dist/
 *.log
+keystore.properties
+*.jks
+*.keystore
