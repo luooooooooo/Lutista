@@ -128,6 +128,8 @@ Android 端 LUT 滤镜批量处理 App，支持导入照片、叠加 LUT、调�
 
 `local.properties` 写 SDK 路径（`sdk.dir=...`，已在 `.gitignore` 中）。
 
+发布签名：`keystore.properties`（仓库根目录，已 `.gitignore`）指向 `lutista-release.jks`，`app/build.gradle.kts` 的 `signingConfigs.release` 读取它；没有该文件时自动退化为未签名构建。证书与密码另存于私有仓库 `luooooooooo/Lutista-signing-keys`（不随源码公开），换机器时按那份 README 的步骤还原即可。
+
 ### 构建命令
 
 ```bash
