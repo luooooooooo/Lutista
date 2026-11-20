@@ -201,12 +201,15 @@ fun PhotoProcessScreen(
         }
     }
 
+    // 未单独定制的照片统一回落到全局默认；这份默认在组合里被反复取用，
+    // 缓存成同一个实例，避免每次 getCurrentSettings() 都新造一个对象打断重组跳过。
+    val defaultSettings = remember(globalFilterId, globalWatermarkId) {
+        PhotoEffectSettings(filterId = globalFilterId, watermarkId = globalWatermarkId)
+    }
+
     fun getCurrentSettings(): PhotoEffectSettings {
         val settings = perImageSettings[selectedPhotoIndex]
-        return if (settings.isCustomized) settings else PhotoEffectSettings(
-            filterId = globalFilterId,
-            watermarkId = globalWatermarkId
-        )
+        return if (settings.isCustomized) settings else defaultSettings
     }
 
     fun updateCurrentSettings(filterId: Long? = null, watermarkId: String? = null) {
@@ -230,6 +233,9 @@ fun PhotoProcessScreen(
     }
 
     val filtersFromDb by filterRepository.getEnabledFilters().collectAsState(initial = emptyList())
+    // 组合里多处要按 id 反查配方（选中态/标签/构建渲染配置），列表一长 .find 就是 O(n) 扫描，
+    // 重建一次 Map 后全部走 O(1)。
+    val filtersById = remember(filtersFromDb) { filtersFromDb.associateBy { it.id } }
 
     /**
      * 打开配方室精修（长按滤镜 / 点预览「精调参数」才会走到这里）。
@@ -243,7 +249,7 @@ fun PhotoProcessScreen(
         }
         val photoUri = photos[selectedPhotoIndex].uri
         // 当前选的已经是备份（比如刚精修过再点「精调参数」）：直接打开它，不再套一层备份
-        val alreadyBackup = filtersFromDb.find { it.id == sourceFilterId && it.isPhotoBackup }
+        val alreadyBackup = filtersById[sourceFilterId]?.takeIf { it.isPhotoBackup }
         if (alreadyBackup != null) {
             backupSaved = true // 老备份不算"本次新建"，退出时不删
             editingRecipeId = alreadyBackup.id
@@ -309,7 +315,7 @@ fun PhotoProcessScreen(
     val currentFilterId = getCurrentSettings().filterId
     val selectableFilters = remember(filtersFromDb, currentFilterId) {
         val base = filtersFromDb.filterNot { it.isPhotoBackup }
-        val backup = filtersFromDb.find { it.id == currentFilterId && it.isPhotoBackup } ?: return@remember base
+        val backup = filtersById[currentFilterId]?.takeIf { it.isPhotoBackup } ?: return@remember base
         val sourceName = backup.name.substringBefore(PHOTO_BACKUP_SUFFIX)
         val insertAt = base.indexOfFirst { it.name == sourceName }.let { if (it >= 0) it + 1 else 0 }
         base.toMutableList().apply { add(insertAt, backup) }
@@ -405,7 +411,7 @@ fun PhotoProcessScreen(
 
     fun buildFilterConfig(filterId: Long): FilterConfig? {
         if (filterId == 0L) return null
-        return filtersFromDb.find { it.id == filterId }?.toFilterConfig()
+        return filtersById[filterId]?.toFilterConfig()
     }
 
     fun saveBitmapToGallery(context: Context, bitmap: Bitmap, displayName: String, exifResolution: ExifResolution?, outputFormat: OutputFormat, quality: Int): Uri? {
@@ -538,7 +544,7 @@ fun PhotoProcessScreen(
                             }
                             val template = settingsManager.outputFilenameTemplate.first()
                             val srcName = extractOriginalBasename(context, Uri.parse(photo.uri))
-                            val filterName = filtersFromDb.find { it.id == effectiveSettings.filterId }?.name ?: ""
+                            val filterName = filtersById[effectiveSettings.filterId]?.name ?: ""
                             val daily = settingsManager.getDailyCounter()
                             val monthly = settingsManager.getMonthlyCounter()
                             val yearly = settingsManager.getYearlyCounter()
@@ -555,6 +561,10 @@ fun PhotoProcessScreen(
                 } catch (e: Exception) {
                     if (e is kotlinx.coroutines.CancellationException) throw e
                     logger.e("PhotoProcessScreen", "处理图片失败: ${photo.uri}", e)
+                } catch (e: OutOfMemoryError) {
+                    // 大图导出内存不够：跳过这张，继续处理后面的，不让整个批量任务闪退
+                    logger.e("PhotoProcessScreen", "处理图片内存不足，已跳过: ${photo.uri}")
+                    System.gc()
                 }
             }
 
@@ -894,9 +904,11 @@ private fun MainPreviewArea(
     // Generation counter: discard stale GPU results when rapidly switching filters
     var filterGeneration by remember { mutableIntStateOf(0) }
 
+    val filtersById = remember(filtersFromDb) { filtersFromDb.associateBy { it.id } }
+
     fun buildConfigForPreview(filterId: Long): FilterConfig? {
         if (filterId == 0L) return null
-        return filtersFromDb.find { it.id == filterId }?.toFilterConfig()
+        return filtersById[filterId]?.toFilterConfig()
     }
 
     // Step 1: Decode image at preview resolution and cache RGBA bytes (only when photo changes)
@@ -934,6 +946,9 @@ private fun MainPreviewArea(
                 }
             } catch (_: Exception) {
                 cachedRgbaBytes = null
+            } catch (_: OutOfMemoryError) {
+                // 预览解码内存不够：放弃这次预览，主界面退到占位而不是崩掉
+                cachedRgbaBytes = null
             }
         }
     }
@@ -948,28 +963,34 @@ private fun MainPreviewArea(
         }
         val filterConfig = buildConfigForPreview(currentSettings.filterId)
         val t0 = System.nanoTime()
-        withContext(Dispatchers.IO) {
-            val result = if (filterConfig != null) {
-                engine.processImageGpuFromBytes(bytes, cachedWidth, cachedHeight, filterConfig)
-            } else {
-                val bmp = Bitmap.createBitmap(cachedWidth, cachedHeight, Bitmap.Config.ARGB_8888)
-                bmp.copyPixelsFromBuffer(java.nio.ByteBuffer.wrap(bytes))
-                bmp
-            }
-            // Apply watermark if selected
-            val wmId = currentSettings.watermarkId
-            Log.d("PhotoProcess", "Preview watermark: id=$wmId")
-            val wmScene = if (wmId != "none") watermarkRepository.getSceneById(wmId.toLongOrNull() ?: 0L) else null
-            Log.d("PhotoProcess", "Preview watermark scene: ${wmScene?.let { "elements=${it.elements.size}" } ?: "null"}")
-            val finalResult = if (result != null && wmScene != null) {
-                watermarkProcessor.applyWatermark(result, wmScene)
-            } else result ?: return@withContext
+        try {
+            withContext(Dispatchers.IO) {
+                val result = if (filterConfig != null) {
+                    engine.processImageGpuFromBytes(bytes, cachedWidth, cachedHeight, filterConfig)
+                } else {
+                    val bmp = Bitmap.createBitmap(cachedWidth, cachedHeight, Bitmap.Config.ARGB_8888)
+                    bmp.copyPixelsFromBuffer(java.nio.ByteBuffer.wrap(bytes))
+                    bmp
+                }
+                // Apply watermark if selected
+                val wmId = currentSettings.watermarkId
+                Log.d("PhotoProcess", "Preview watermark: id=$wmId")
+                val wmScene = if (wmId != "none") watermarkRepository.getSceneById(wmId.toLongOrNull() ?: 0L) else null
+                Log.d("PhotoProcess", "Preview watermark scene: ${wmScene?.let { "elements=${it.elements.size}" } ?: "null"}")
+                val finalResult = if (result != null && wmScene != null) {
+                    watermarkProcessor.applyWatermark(result, wmScene)
+                } else result ?: return@withContext
 
-            val elapsed = (System.nanoTime() - t0) / 1_000_000
-            Log.d("PreviewTiming", "filterId=${currentSettings.filterId} gen=$gen elapsed=${elapsed}ms size=${cachedWidth}x${cachedHeight}")
-            if (gen == filterGeneration) {
-                previewBitmap = finalResult
+                val elapsed = (System.nanoTime() - t0) / 1_000_000
+                Log.d("PreviewTiming", "filterId=${currentSettings.filterId} gen=$gen elapsed=${elapsed}ms size=${cachedWidth}x${cachedHeight}")
+                if (gen == filterGeneration) {
+                    previewBitmap = finalResult
+                }
             }
+        } catch (e: OutOfMemoryError) {
+            // 主预览 OOM：丢掉这一份结果，界面保持在上一帧/占位上，不影响后续操作
+            Log.w("PhotoProcess", "主预览渲染 OOM，已跳过本次刷新")
+            previewBitmap = null
         }
     }
 
@@ -1027,7 +1048,7 @@ private fun MainPreviewArea(
             }
 
             // 名字从完整列表取（含单图备份），否则精修后这里会显示成"默认"
-            val filterName = filtersFromDb.find { it.id == currentSettings.filterId }?.name
+            val filterName = filtersById[currentSettings.filterId]?.name
                 ?: filterOptions.find { it.id == currentSettings.filterId }?.name
                 ?: "默认"
             Box(

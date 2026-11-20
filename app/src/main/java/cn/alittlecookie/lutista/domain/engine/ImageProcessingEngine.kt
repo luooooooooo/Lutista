@@ -25,6 +25,9 @@ class ImageProcessingEngine(
 ) {
     companion object {
         private const val TAG = "ImageProcessingEngine"
+
+        /** 超过这个尺寸（一般是整幅导出）就一次性分配，不复用，避免常驻占着几十 MB */
+        private const val SCRATCH_RETAIN_LIMIT = 16 * 1024 * 1024
     }
 
     @Volatile private var lastLutPath1: String? = null
@@ -40,6 +43,24 @@ class ImageProcessingEngine(
      */
     private val renderLock = Any()
 
+    /**
+     * 渲染输入缓冲。原生侧是"就地"处理（把结果写回同一块内存），
+     * 所以调用方传入的字节必须复制一份再交出去；这里保留一块跨调用复用的缓冲，
+     * 避免每渲一个滤镜就新分配一份整幅 RGBA（1024 长边约 5.6MB，21 个滤镜 = 上百 MB 的分配风暴）。
+     * 所有用到它的路径都在 [renderLock] 内，单块缓冲即安全。
+     */
+    private var scratch: ByteArray = ByteArray(0)
+
+    private fun scratchFor(size: Int): ByteArray {
+        if (size > SCRATCH_RETAIN_LIMIT) return ByteArray(size)
+        var buf = scratch
+        if (buf.size != size) {
+            buf = ByteArray(size)
+            scratch = buf
+        }
+        return buf
+    }
+
     fun processImageGpuFromBytes(
         rgbaBytes: ByteArray, width: Int, height: Int, filter: FilterConfig
     ): Bitmap? {
@@ -49,15 +70,27 @@ class ImageProcessingEngine(
                 uploadLutIfNeeded(filter)
                 uploadCurvesIfNeeded(filter)
                 val params = buildGpuParams(filter)
-                val inputCopy = rgbaBytes.copyOf()
-                val resultBytes = vulkanGpuEngine.processImage(inputCopy, width, height, params)
+                val size = width * height * 4
+                if (rgbaBytes.size < size) {
+                    logger.w(TAG, "输入像素不足: ${rgbaBytes.size} < $size")
+                    return@synchronized null
+                }
+                val buffer = scratchFor(size)
+                System.arraycopy(rgbaBytes, 0, buffer, 0, size)
+                val resultBytes = vulkanGpuEngine.processImage(buffer, width, height, params)
                     ?: return@synchronized null
                 val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
                 bitmap.copyPixelsFromBuffer(ByteBuffer.wrap(resultBytes))
                 bitmap
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
-                if (e is kotlinx.coroutines.CancellationException) throw e
                 logger.w(TAG, "GPU processing from bytes failed", e)
+                null
+            } catch (e: OutOfMemoryError) {
+                // 缩略图/预览在低内存下建 bitmap 失败：清空复用缓冲释放引用后交回上层降级
+                scratch = ByteArray(0)
+                logger.w(TAG, "GPU processing from bytes OOM，已释放复用缓冲")
                 null
             }
         }
@@ -76,7 +109,7 @@ class ImageProcessingEngine(
 
                 val width = inputBitmap.width
                 val height = inputBitmap.height
-                val rgbaBytes = ByteArray(width * height * 4)
+                val rgbaBytes = scratchFor(width * height * 4)
                 inputBitmap.copyPixelsToBuffer(ByteBuffer.wrap(rgbaBytes))
 
                 uploadLutIfNeeded(filter)
@@ -92,6 +125,10 @@ class ImageProcessingEngine(
             } catch (e: Exception) {
                 logger.w(TAG, "GPU processing from URI failed", e)
                 null
+            } catch (e: OutOfMemoryError) {
+                scratch = ByteArray(0)
+                logger.w(TAG, "GPU processing from URI OOM，已释放复用缓冲")
+                null
             }
         }
     }
@@ -103,7 +140,7 @@ class ImageProcessingEngine(
         return synchronized(renderLock) {
             val width = bitmap.width
             val height = bitmap.height
-            val rgbaBytes = ByteArray(width * height * 4)
+            val rgbaBytes = scratchFor(width * height * 4)
             bitmap.copyPixelsToBuffer(ByteBuffer.wrap(rgbaBytes))
 
             uploadLutIfNeeded(filter)

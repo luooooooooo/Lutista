@@ -253,6 +253,9 @@ class FilterThumbnailStore(
             BaseImage(uri, w, h, bytes, scaled)
         } catch (e: CancellationException) {
             throw e
+        } catch (e: OutOfMemoryError) {
+            logger.w(TAG, "解码基准图 OOM: $uri")
+            null
         } catch (e: Exception) {
             logger.w(TAG, "解码基准图失败", e)
             null
@@ -322,10 +325,20 @@ class FilterThumbnailStore(
             }
             withStateUpdate {
                 putCache(filterId, result)
-                loading.remove(filterId)
             }
         } catch (e: CancellationException) {
             throw e
+        } catch (e: OutOfMemoryError) {
+            // 低内存机型上连续渲图可能建不出 bitmap：丢掉现有缓存腾地方，跳过这一张，不往下崩
+            logger.w(TAG, "缩略图渲染 OOM，清空缓存 filterId=$filterId")
+            synchronized(lock) {
+                cache.clear()
+                cacheBytes = 0L
+            }
+            withStateUpdate {
+                thumbnails.clear()
+                loading.clear()
+            }
         } catch (e: Exception) {
             logger.w(TAG, "缩略图渲染异常 filterId=$filterId", e)
         } finally {
@@ -334,21 +347,24 @@ class FilterThumbnailStore(
     }
 
     private fun putCache(filterId: Long, bitmap: Bitmap) {
+        val evicted = ArrayList<Long>(0)
         synchronized(lock) {
             val previous = cache.put(filterId, bitmap)
             if (previous != null) cacheBytes -= previous.allocationByteCount.toLong()
             cacheBytes += bitmap.allocationByteCount.toLong()
-            evictIfNeeded()
+            evictIfNeeded(evicted)
         }
+        // 淘汰的 key 在锁外从快照状态里摘掉，避免持锁写 Compose 状态
+        evicted.forEach { thumbnails.remove(it) }
         thumbnails[filterId] = bitmap
     }
 
-    private fun evictIfNeeded() {
+    private fun evictIfNeeded(evicted: MutableList<Long>) {
         val iterator = cache.entries.iterator()
         while ((cacheBytes > MAX_CACHE_BYTES || cache.size > MAX_CACHE_COUNT) && iterator.hasNext()) {
             val entry = iterator.next()
             cacheBytes -= entry.value.allocationByteCount.toLong()
-            thumbnails.remove(entry.key)
+            evicted.add(entry.key)
             iterator.remove()
         }
     }

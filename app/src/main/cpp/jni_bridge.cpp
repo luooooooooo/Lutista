@@ -180,18 +180,11 @@ static jbyteArray nativeProcessImage(JNIEnv* env, jobject thiz, jlong handle,
                                          static_cast<uint32_t>(height), fp);
 
     env->ReleaseFloatArrayElements(params, paramArr, JNI_ABORT);
+    // 结果就写在入参这块内存里（就地处理），直接提交回 Java 数组即可，
+    // 不再额外 NewByteArray + SetByteArrayRegion 拷一份整幅图像。
+    env->ReleaseByteArrayElements(imageData, data, 0);
 
-    if (success) {
-        // Create output byte array and copy result
-        jsize dataSize = width * height * 4;
-        jbyteArray result = env->NewByteArray(dataSize);
-        env->SetByteArrayRegion(result, 0, dataSize, data);
-        env->ReleaseByteArrayElements(imageData, data, JNI_ABORT);
-        return result;
-    } else {
-        env->ReleaseByteArrayElements(imageData, data, JNI_ABORT);
-        return nullptr;
-    }
+    return success ? imageData : nullptr;
 }
 
 // ── Method table and JNI_OnLoad ──

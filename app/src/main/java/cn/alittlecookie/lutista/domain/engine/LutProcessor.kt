@@ -14,9 +14,18 @@ class LutProcessor(
 ) {
     companion object {
         private const val TAG = "LutProcessor"
+        private const val MAX_CACHED_LUTS = 8
     }
 
-    private val lutCache = mutableMapOf<String, LutData>()
+    /**
+     * 解析好的 LUT 按路径缓存，避免来回切滤镜时反复解析 1MB 的 .cube。
+     * 但一个 64³ 的 LUT 展开是 3MB float，滤镜多了会一直涨，所以做成有上限的 LRU：
+     * 只保留最近用过的 8 份，超出的丢给 GC。
+     */
+    private val lutCache = object : LinkedHashMap<String, LutData>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, LutData>) =
+            size > MAX_CACHED_LUTS
+    }
 
     fun processWithUnifiedLut(bitmap: Bitmap, unifiedLut: UnifiedLut): Bitmap {
         val lutData = LutData(size = unifiedLut.size, data = unifiedLut.data)
@@ -51,7 +60,7 @@ class LutProcessor(
     }
 
     private fun loadLut(path: String): LutData? {
-        lutCache[path]?.let { return it }
+        synchronized(lutCache) { lutCache[path] }?.let { return it }
         return try {
             val file = java.io.File(path)
             if (!file.exists()) { logger.w(TAG, "LUT file not found: $path"); return null }
@@ -61,7 +70,7 @@ class LutProcessor(
                 else -> { logger.w(TAG, "Unsupported LUT format: $path"); return null }
             }
             val quantized = lutParser.quantizeLut(lut)
-            lutCache[path] = quantized
+            synchronized(lutCache) { lutCache[path] = quantized }
             quantized
         } catch (e: Exception) {
             logger.e(TAG, "Failed to load LUT: $path", e)
@@ -79,16 +88,18 @@ class LutProcessor(
 
         val resultBytes = ByteArray(pixelCount * 4)
         val inv255 = 1f / 255f
+        // 逐像素复用同一块 out[3]，不再每个像素 new FloatArray
+        val out = FloatArray(3)
 
         for (i in 0 until pixelCount) {
             val base = i * 4
             val r = (rgbaBytes[base].toInt() and 0xFF) * inv255
             val g = (rgbaBytes[base + 1].toInt() and 0xFF) * inv255
             val b = (rgbaBytes[base + 2].toInt() and 0xFF) * inv255
-            val result = lutParser.trilinearInterpolation(lut, r, g, b)
-            resultBytes[base] = (result[0].coerceIn(0f, 1f) * 255f).toInt().toByte()
-            resultBytes[base + 1] = (result[1].coerceIn(0f, 1f) * 255f).toInt().toByte()
-            resultBytes[base + 2] = (result[2].coerceIn(0f, 1f) * 255f).toInt().toByte()
+            lutParser.trilinearInterpolation(lut, r, g, b, out)
+            resultBytes[base] = (out[0].coerceIn(0f, 1f) * 255f).toInt().toByte()
+            resultBytes[base + 1] = (out[1].coerceIn(0f, 1f) * 255f).toInt().toByte()
+            resultBytes[base + 2] = (out[2].coerceIn(0f, 1f) * 255f).toInt().toByte()
             resultBytes[base + 3] = rgbaBytes[base + 3] // preserve alpha
         }
 
@@ -98,12 +109,12 @@ class LutProcessor(
     }
 
     fun clearCache() {
-        lutCache.clear()
+        synchronized(lutCache) { lutCache.clear() }
     }
 
     fun loadLutForGpu(path: String, targetSize: Int): LutData? {
         val cacheKey = "$path@$targetSize"
-        lutCache[cacheKey]?.let { return it }
+        synchronized(lutCache) { lutCache[cacheKey] }?.let { return it }
         return try {
             val file = java.io.File(path)
             if (!file.exists()) { logger.w(TAG, "LUT file not found: $path"); return null }
@@ -113,7 +124,7 @@ class LutProcessor(
                 else -> { logger.w(TAG, "Unsupported LUT format: $path"); return null }
             }
             val quantized = lutParser.quantizeLut(parsed, targetSize)
-            lutCache[cacheKey] = quantized
+            synchronized(lutCache) { lutCache[cacheKey] = quantized }
             quantized
         } catch (e: Exception) {
             logger.e(TAG, "Failed to load LUT: $path", e)
