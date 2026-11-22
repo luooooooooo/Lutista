@@ -56,6 +56,13 @@ class FilterEditorViewModel(
 
     var previewBitmap by mutableStateOf<Bitmap?>(null)
         private set
+
+    /**
+     * 内存里保留一份未经滤镜处理的原图 Bitmap，长按查看原图时直接在同一 Image 槽位切换，
+     * 不走 Coil 异步解码，避免长按瞬间空白 / 闪一下（与 PhotoProcessScreen 同一做法）。
+     */
+    var originalBitmap by mutableStateOf<Bitmap?>(null)
+        private set
     var isLongPressed by mutableStateOf(false)
 
     // ── 预览图片管理 ──────────────────────────────────────────────
@@ -136,6 +143,11 @@ class FilterEditorViewModel(
                 cachedHeight = bitmap.height
                 cachedRgbaBytes = ByteArray(cachedWidth * cachedHeight * 4)
                 bitmap.copyPixelsToBuffer(ByteBuffer.wrap(cachedRgbaBytes!!))
+
+                originalBitmap?.recycle()
+                val original = Bitmap.createBitmap(cachedWidth, cachedHeight, Bitmap.Config.ARGB_8888)
+                original.copyPixelsFromBuffer(ByteBuffer.wrap(cachedRgbaBytes!!))
+                originalBitmap = original
                 bitmap.recycle()
 
                 logger.d(TAG, "默认预览图已加载: ${cachedWidth}x${cachedHeight}")
@@ -180,6 +192,11 @@ class FilterEditorViewModel(
                 cachedHeight = bitmap.height
                 cachedRgbaBytes = ByteArray(cachedWidth * cachedHeight * 4)
                 bitmap.copyPixelsToBuffer(ByteBuffer.wrap(cachedRgbaBytes!!))
+
+                originalBitmap?.recycle()
+                val original = Bitmap.createBitmap(cachedWidth, cachedHeight, Bitmap.Config.ARGB_8888)
+                original.copyPixelsFromBuffer(ByteBuffer.wrap(cachedRgbaBytes!!))
+                originalBitmap = original
                 bitmap.recycle()
 
                 previewImageUri = uri.toString()
@@ -458,6 +475,8 @@ class FilterEditorViewModel(
         renderJob?.cancel()
         previewBitmap?.recycle()
         previewBitmap = null
+        originalBitmap?.recycle()
+        originalBitmap = null
         cachedRgbaBytes = null
         cachedWidth = 0
         cachedHeight = 0

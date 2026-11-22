@@ -8,6 +8,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
@@ -42,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -554,7 +556,14 @@ private fun PreviewArea(
     modifier: Modifier = Modifier
 ) {
     val previewBitmap = state.previewBitmap
+    val originalBitmap = state.originalBitmap
     val isLongPressed = state.isLongPressed
+
+    // 原图与滤镜结果都走内存 Bitmap，在同一个 Image 槽位切换；
+    // 长按看原图不再经过 Coil 异步解码，避免瞬间空白 / 闪一下。
+    val originalImage = remember(originalBitmap) { originalBitmap?.asImageBitmap() }
+    val previewImage = remember(previewBitmap) { previewBitmap?.asImageBitmap() }
+    val shownImage = if (isLongPressed) originalImage ?: previewImage else previewImage
 
     Card(
         modifier = modifier,
@@ -582,26 +591,20 @@ private fun PreviewArea(
                 },
             contentAlignment = Alignment.Center
         ) {
-            if (isLongPressed) {
-                // 长按显示原图
-                AsyncImage(
-                    model = state.previewImageUri ?: cn.alittlecookie.lutista.R.raw.example,
-                    contentDescription = "原图",
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier.fillMaxSize()
-                )
-            } else if (previewBitmap != null) {
-                AsyncImage(
-                    model = previewBitmap,
-                    contentDescription = "滤镜预览",
+            if (shownImage != null) {
+                Image(
+                    bitmap = shownImage,
+                    contentDescription = if (isLongPressed) "原图" else "滤镜预览",
                     contentScale = ContentScale.Fit,
                     modifier = Modifier.fillMaxSize()
                 )
             } else {
-                // 加载中
-                Text(
-                    text = "加载中...",
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary
+                // 还没解码出内存 Bitmap 时兜底走 Coil 加载
+                AsyncImage(
+                    model = state.previewImageUri ?: cn.alittlecookie.lutista.R.raw.example,
+                    contentDescription = "预览",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize()
                 )
             }
 
