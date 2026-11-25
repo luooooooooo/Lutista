@@ -9,6 +9,7 @@ import android.os.Build
 import android.provider.MediaStore
 import android.util.Log
 import androidx.exifinterface.media.ExifInterface
+import java.io.File
 
 data class ExifResolution(
     val exif: ExifInterface,
@@ -43,46 +44,107 @@ object ExifUtils {
 
     fun applyOrientation(bitmap: Bitmap, exif: ExifInterface): Bitmap {
         val orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
-        val degrees = when (orientation) {
-            ExifInterface.ORIENTATION_ROTATE_90 -> 90f
-            ExifInterface.ORIENTATION_ROTATE_180 -> 180f
-            ExifInterface.ORIENTATION_ROTATE_270 -> 270f
-            else -> 0f
+        // EXIF 的 8 种方向都要处理：2/4 是镜像，5/7 是镜像 + 旋转，
+        // 只处理 3/6/8 会漏掉自拍镜像等场景，导出后画面会左右/上下翻。
+        val matrix = Matrix()
+        when (orientation) {
+            ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.postScale(-1f, 1f)
+            ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+            ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.postScale(1f, -1f)
+            ExifInterface.ORIENTATION_TRANSPOSE -> {
+                matrix.postRotate(90f)
+                matrix.postScale(-1f, 1f)
+            }
+            ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+            ExifInterface.ORIENTATION_TRANSVERSE -> {
+                matrix.postRotate(-90f)
+                matrix.postScale(-1f, 1f)
+            }
+            ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(-90f)
+            else -> return bitmap
         }
-        if (degrees == 0f) return bitmap
-        Log.d(TAG, "applyOrientation: rotating ${bitmap.width}x${bitmap.height} by $degrees° (orient=$orientation)")
-        val matrix = Matrix().apply { postRotate(degrees) }
-        val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
-        if (rotated != bitmap) bitmap.recycle()
-        return rotated
+        Log.d(TAG, "applyOrientation: ${bitmap.width}x${bitmap.height} orient=$orientation")
+        val oriented = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+        if (oriented != bitmap) bitmap.recycle()
+        return oriented
     }
 
-    // ── File-based EXIF copy (used by ImageProcessingService) ────
+    // ── 输出 EXIF 归一化（导出照片用） ──────────────────────────
 
-    fun copyExif(sourcePath: String, destPath: String) {
-        try {
-            val srcExif = ExifInterface(sourcePath)
-            val destExif = ExifInterface(destPath)
-            copyAllTags(srcExif, destExif)
-            destExif.setAttribute(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL.toString())
-            destExif.saveAttributes()
-            Log.d(TAG, "copyExif(path): $sourcePath -> $destPath")
-        } catch (e: Exception) {
-            Log.e(TAG, "copyExif(path) failed: $sourcePath -> $destPath | $e")
-        }
-    }
+    /**
+     * 结构性标签：描述的是源文件的物理布局（缩略图 / IFD1、条带、原始像素尺寸等）。
+     * 导出图是重新编码的新像素，这些值搬过去就是过期数据；尤其是 IFD1 里那份
+     * 缩略图方向标记（Orientation），部分看图软件（如微信）会把它当成整图方向，
+     * 导致「相册看是正的，发出去横着」。
+     */
+    private val UNSAFE_TAGS = setOf(
+        ExifInterface.TAG_ORIENTATION,
+        ExifInterface.TAG_THUMBNAIL_ORIENTATION,
+        ExifInterface.TAG_THUMBNAIL_IMAGE_LENGTH,
+        ExifInterface.TAG_THUMBNAIL_IMAGE_WIDTH,
+        ExifInterface.TAG_JPEG_INTERCHANGE_FORMAT,
+        ExifInterface.TAG_JPEG_INTERCHANGE_FORMAT_LENGTH,
+        ExifInterface.TAG_STRIP_OFFSETS,
+        ExifInterface.TAG_STRIP_BYTE_COUNTS,
+        ExifInterface.TAG_ROWS_PER_STRIP,
+        ExifInterface.TAG_SAMPLES_PER_PIXEL,
+        ExifInterface.TAG_BITS_PER_SAMPLE,
+        ExifInterface.TAG_COMPRESSION,
+        ExifInterface.TAG_PHOTOMETRIC_INTERPRETATION,
+        ExifInterface.TAG_PLANAR_CONFIGURATION,
+        ExifInterface.TAG_IMAGE_WIDTH,
+        ExifInterface.TAG_IMAGE_LENGTH,
+        ExifInterface.TAG_PIXEL_X_DIMENSION,
+        ExifInterface.TAG_PIXEL_Y_DIMENSION,
+        ExifInterface.TAG_MAKER_NOTE,
+        ExifInterface.TAG_XMP,
+        ExifInterface.TAG_OECF,
+        ExifInterface.TAG_ORF_ASPECT_FRAME,
+        ExifInterface.TAG_ORF_PREVIEW_IMAGE_LENGTH,
+        ExifInterface.TAG_ORF_PREVIEW_IMAGE_START,
+        ExifInterface.TAG_ORF_THUMBNAIL_IMAGE,
+        ExifInterface.TAG_DNG_VERSION,
+        ExifInterface.TAG_CFA_PATTERN,
+        ExifInterface.TAG_TRANSFER_FUNCTION,
+        ExifInterface.TAG_WHITE_POINT,
+        ExifInterface.TAG_PRIMARY_CHROMATICITIES,
+        ExifInterface.TAG_Y_CB_CR_COEFFICIENTS,
+        ExifInterface.TAG_Y_CB_CR_POSITIONING,
+        ExifInterface.TAG_Y_CB_CR_SUB_SAMPLING,
+    )
 
-    fun copyExif(context: Context, sourceUri: Uri, destPath: String) {
+    /**
+     * 给重新编码的 JPEG 写一份「干净」的 EXIF：
+     * - 方向固定 1（像素已由 [applyOrientation] 转正）
+     * - 不搬运缩略图 / IFD1 / 条带等结构标签，文件里只剩一处方向标记
+     * - 尺寸写成实际输出的宽高，不再保留源图的旧尺寸
+     * 相机型号、拍摄参数、GPS 等描述性标签仍然保留。
+     */
+    fun buildCleanJpegExif(
+        jpeg: ByteArray,
+        sourceExif: ExifInterface?,
+        tempFile: File,
+        width: Int,
+        height: Int
+    ): ByteArray {
+        tempFile.parentFile?.mkdirs()
+        tempFile.writeBytes(jpeg)
         try {
-            val srcExif = context.contentResolver.openInputStream(sourceUri)?.use { ExifInterface(it) }
-                ?: return
-            val destExif = ExifInterface(destPath)
-            copyAllTags(srcExif, destExif)
-            destExif.setAttribute(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL.toString())
-            destExif.saveAttributes()
-            Log.d(TAG, "copyExif(uri): $sourceUri -> $destPath")
-        } catch (e: Exception) {
-            Log.e(TAG, "copyExif(uri) failed: $sourceUri -> $destPath | $e")
+            val dest = ExifInterface(tempFile.absolutePath)
+            if (sourceExif != null) {
+                for (tag in ALL_TAGS) {
+                    if (tag in UNSAFE_TAGS) continue
+                    val value = try { sourceExif.getAttribute(tag) } catch (_: Exception) { null } ?: continue
+                    try { dest.setAttribute(tag, value) } catch (_: Exception) { /* 个别标签格式不受支持，跳过 */ }
+                }
+            }
+            dest.setAttribute(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL.toString())
+            dest.setAttribute(ExifInterface.TAG_PIXEL_X_DIMENSION, width.toString())
+            dest.setAttribute(ExifInterface.TAG_PIXEL_Y_DIMENSION, height.toString())
+            dest.saveAttributes()
+            return tempFile.readBytes()
+        } finally {
+            tempFile.delete()
         }
     }
 
@@ -185,82 +247,12 @@ object ExifUtils {
         return null
     }
 
-    /** Modify orientation tag inside an APP1 EXIF segment in-place. */
-    fun setOrientationInApp1(app1: ByteArray, orientation: Short): ByteArray {
-        if (app1.size < 14) return app1
-        val tiffStart = 10
-        val isLE = app1[tiffStart] == 0x49.toByte()
-        fun r16(p: Int) = if (isLE) (app1[p].toInt() and 0xFF) or ((app1[p + 1].toInt() and 0xFF) shl 8)
-                          else ((app1[p].toInt() and 0xFF) shl 8) or (app1[p + 1].toInt() and 0xFF)
-        fun r32(p: Int) = if (isLE) (app1[p].toInt() and 0xFF) or ((app1[p + 1].toInt() and 0xFF) shl 8) or
-                          ((app1[p + 2].toInt() and 0xFF) shl 16) or ((app1[p + 3].toInt() and 0xFF) shl 24)
-                          else ((app1[p].toInt() and 0xFF) shl 24) or ((app1[p + 1].toInt() and 0xFF) shl 16) or
-                          ((app1[p + 2].toInt() and 0xFF) shl 8) or (app1[p + 3].toInt() and 0xFF)
-        val ifd0 = r32(tiffStart + 4) + tiffStart
-        if (ifd0 < 0 || ifd0 + 2 > app1.size) return app1
-        val entries = r16(ifd0)
-        var ep = ifd0 + 2
-        for (i in 0 until entries) {
-            if (ep + 12 > app1.size) break
-            if (r16(ep) == 0x0112 && r16(ep + 2) == 3) {
-                val result = app1.copyOf()
-                val v = orientation.toInt() and 0xFFFF
-                if (isLE) {
-                    result[ep + 8] = (v and 0xFF).toByte()
-                    result[ep + 9] = ((v shr 8) and 0xFF).toByte()
-                } else {
-                    result[ep + 8] = ((v shr 8) and 0xFF).toByte()
-                    result[ep + 9] = (v and 0xFF).toByte()
-                }
-                return result
-            }
-            ep += 12
-        }
-        return app1
-    }
-
-    /** Inject APP1 into JPEG bytes — replaces existing APP1 or inserts after APP0. */
-    fun injectApp1ToJpeg(jpegBytes: ByteArray, app1: ByteArray): ByteArray {
-        var insertPos = 2
-        var pos = 2
-        while (pos < jpegBytes.size - 3) {
-            if (jpegBytes[pos] != 0xFF.toByte()) { pos++; continue }
-            val marker = jpegBytes[pos + 1].toInt() and 0xFF
-            if (marker == 0xE1) {
-                val length = ((jpegBytes[pos + 2].toInt() and 0xFF) shl 8) or (jpegBytes[pos + 3].toInt() and 0xFF)
-                val result = ByteArray(jpegBytes.size - (2 + length) + app1.size)
-                jpegBytes.copyInto(result, 0, 0, pos)
-                app1.copyInto(result, pos)
-                jpegBytes.copyInto(result, pos + app1.size, pos + 2 + length, jpegBytes.size)
-                return result
-            }
-            if (marker == 0xE0) {
-                val length = ((jpegBytes[pos + 2].toInt() and 0xFF) shl 8) or (jpegBytes[pos + 3].toInt() and 0xFF)
-                insertPos = pos + 2 + length
-            }
-            if (marker == 0xDA || marker == 0xD9) break
-            if (marker == 0xD8) { pos += 2; continue }
-            if (pos + 3 >= jpegBytes.size) break
-            val length = ((jpegBytes[pos + 2].toInt() and 0xFF) shl 8) or (jpegBytes[pos + 3].toInt() and 0xFF)
-            pos += 2 + length
-        }
-        val result = ByteArray(jpegBytes.size + app1.size)
-        jpegBytes.copyInto(result, 0, 0, insertPos)
-        app1.copyInto(result, insertPos)
-        jpegBytes.copyInto(result, insertPos + app1.size, insertPos, jpegBytes.size)
-        return result
-    }
-
     // ── Tag utilities ────────────────────────────────────────────
 
     fun copyAllTagsTo(src: ExifInterface, dest: ExifInterface) {
         for (tag in ALL_TAGS) {
             src.getAttribute(tag)?.let { dest.setAttribute(tag, it) }
         }
-    }
-
-    private fun copyAllTags(src: ExifInterface, dest: ExifInterface) {
-        copyAllTagsTo(src, dest)
     }
 
     fun readTag(path: String, tag: String): String? {

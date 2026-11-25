@@ -184,11 +184,20 @@ class ImageProcessingService(
         bitmap.compress(format, quality, bos)
         var outputBytes = bos.toByteArray()
 
-        // Inject EXIF via APP1 for JPEG outputs
-        if (format == Bitmap.CompressFormat.JPEG && exifResolution?.app1Segment != null) {
-            val app1 = ExifUtils.setOrientationInApp1(exifResolution.app1Segment, 1)
-            outputBytes = ExifUtils.injectApp1ToJpeg(outputBytes, app1)
-            logger.d(TAG, "EXIF injected via APP1 (${app1.size} bytes)")
+        // 重新生成 EXIF：方向固定 1（像素已转正），不带源图缩略图 / IFD1 方向标记
+        if (format == Bitmap.CompressFormat.JPEG) {
+            outputBytes = try {
+                ExifUtils.buildCleanJpegExif(
+                    jpeg = outputBytes,
+                    sourceExif = exifResolution?.exif,
+                    tempFile = File(context.cacheDir, "lutista_exif_${System.nanoTime()}.jpg"),
+                    width = bitmap.width,
+                    height = bitmap.height
+                )
+            } catch (e: Exception) {
+                logger.e(TAG, "写入 EXIF 失败，保留原始输出", e)
+                outputBytes
+            }
         }
 
         if (outputPath.startsWith("content://")) {

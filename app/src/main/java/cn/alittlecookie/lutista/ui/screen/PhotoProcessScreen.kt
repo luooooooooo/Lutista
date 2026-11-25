@@ -113,6 +113,7 @@ import top.yukonga.miuix.kmp.menu.OverlayIconCascadingDropdownMenu
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.window.WindowDialog
 import java.io.ByteArrayOutputStream
+import java.io.File
 
 data class PhotoItem(
     val uri: String,
@@ -427,14 +428,21 @@ fun PhotoProcessScreen(
         bitmap.compress(bitmapFormat, quality, bos)
         var outputBytes = bos.toByteArray()
 
-        if (outputFormat != OutputFormat.PNG && exifResolution?.app1Segment != null) {
-            val app1 = try {
-                ExifUtils.setOrientationInApp1(exifResolution.app1Segment, 1)
+        // 重新生成输出文件的 EXIF：像素已在解码时转正，这里把方向固定为 1，
+        // 并且只搬运描述性标签，不带源图的缩略图 / IFD1 方向标记。
+        if (outputFormat != OutputFormat.PNG) {
+            outputBytes = try {
+                ExifUtils.buildCleanJpegExif(
+                    jpeg = outputBytes,
+                    sourceExif = exifResolution?.exif,
+                    tempFile = File(context.cacheDir, "lutista_exif_${System.nanoTime()}.jpg"),
+                    width = bitmap.width,
+                    height = bitmap.height
+                )
             } catch (e: Exception) {
-                Log.e("ExifUtils", "setOrientationInApp1 failed", e)
-                exifResolution.app1Segment
+                Log.e("ExifUtils", "buildCleanJpegExif failed", e)
+                outputBytes
             }
-            outputBytes = ExifUtils.injectApp1ToJpeg(outputBytes, app1)
         }
 
         val contentValues = ContentValues().apply {

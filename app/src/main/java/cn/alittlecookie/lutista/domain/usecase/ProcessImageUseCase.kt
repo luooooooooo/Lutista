@@ -60,7 +60,23 @@ class ProcessImageUseCase(
                 else -> Bitmap.CompressFormat.JPEG
             }
             FileOutputStream(outputPath).use { outputBitmap.compress(format, 95, it) }
-            ExifUtils.copyExif(sourcePath, outputPath)
+            if (format == Bitmap.CompressFormat.JPEG) {
+                // 重建 EXIF：方向固定 1，丢掉源图缩略图 / IFD1 方向标记，尺寸写成实际输出
+                try {
+                    val sourceExif = androidx.exifinterface.media.ExifInterface(sourcePath)
+                    val outputFile = File(outputPath)
+                    val clean = ExifUtils.buildCleanJpegExif(
+                        jpeg = outputFile.readBytes(),
+                        sourceExif = sourceExif,
+                        tempFile = File(context.cacheDir, "lutista_exif_${System.nanoTime()}.jpg"),
+                        width = outputBitmap.width,
+                        height = outputBitmap.height
+                    )
+                    outputFile.writeBytes(clean)
+                } catch (e: Exception) {
+                    logger.e(TAG, "写入 EXIF 失败，保留原始输出", e)
+                }
+            }
             outputBitmap.recycle()
 
             logger.i(TAG, "图像处理成功: $outputPath")
